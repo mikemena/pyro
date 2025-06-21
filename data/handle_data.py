@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import pickle
 from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
 import torch
 
 def preprocess_dates(df, date_column):
@@ -19,6 +20,15 @@ def preprocess_dates(df, date_column):
     df = df.drop(date_column, axis=1)
     return df
 
+def split_data(X_tensor, test_size=0.2, val_size=0.2):
+    # First split: train + val vs test
+    X_temp, X_test = train_test_split(X_tensor, test_size=test_size, random_state=42)
+
+    # Second split: train vs val
+    X_train, X_val = train_test_split(X_temp, test_size=val_size/(1-test_size), random_state=42)
+
+    return X_train, X_val, X_test
+
 def full_preprocessing(df, is_training=True, scaler=None):
     """Complete preprocessing pipeline - used by both train and predict"""
     # process date BEFORE one-hot encoding
@@ -26,7 +36,7 @@ def full_preprocessing(df, is_training=True, scaler=None):
 
     # now do one-hot encoding on categorical columns
     df_encoded = pd.get_dummies(df, columns=['region','specialty'], dtype=int)
-    # print(df_encoded)
+    print(df_encoded)
 
     if is_training:
         scaler = StandardScaler()
@@ -45,7 +55,13 @@ def load_and_preprocess_training_data(file_path):
     """For training"""
     # load data
     df = pd.read_excel(file_path)
-    return full_preprocessing(df, is_training=True)
+
+    X_tensor, feature_names, scaler = full_preprocessing(df, is_training=True)
+
+    # Split data
+    X_train, X_val, X_test = split_data(X_tensor)
+
+    return X_train, X_val, X_test, feature_names
 
 def load_and_preprocess_prediction_data(file_path):
     """For prediction - uses scaler"""
