@@ -2,3 +2,13 @@ torch
 torchvision
 torchaudio
 matplotlib
+numpy
+pandas
+scikit-learn
+yfinance
+seaborn
+plotly
+jupyter
+tqdm
+openpyxl
+pickle
