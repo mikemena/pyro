@@ -57,9 +57,10 @@ def analyze_column(series, col_name):
     """Analyze individual column and determine preprocessing needs"""
     # Get basic statistics
     stats = get_column_statistics(series)
+    row_count = len(series)
 
     # Determine column type
-    recommended_type = determine_column_type(series, stats['unique_count'])
+    recommended_type = determine_column_type(series, stats['unique_count'], row_count)
 
     # Generate recommendations
     recommendations = generate_recommendations(series, recommended_type, stats)
@@ -70,8 +71,9 @@ def analyze_column(series, col_name):
         'missing_percentage': stats['missing_percentage'],
         'sample_values': stats['sample_values'],
         'recommended_type': recommended_type,
-        'is_numeric': stats['is_numeric'],
-        'is_datetime': stats['is_datetime'],
+        'column_type': stats['column_type'],
+        #'is_numeric': stats['is_numeric'],
+        #'is_datetime': stats['is_datetime'],
         'recommendations': recommendations
     }
 
@@ -87,32 +89,42 @@ def get_column_statistics(series):
     sample_values = [str(val) for val in unique_values[:5]]
 
     # Determine data types
-    is_numeric = pd.api.types.is_numeric_dtype(series)
-    is_datetime = pd.api.types.is_datetime64_any_dtype(series)
+    #  # Determine column type
+    column_type = determine_column_type(series, unique_count, total_count)
+    #is_numeric = pd.api.types.is_numeric_dtype(series)
+    # is_datetime = pd.api.types.is_datetime64_any_dtype(series)
 
     return {
         'unique_count': unique_count,
         'missing_count': missing_count,
         'missing_percentage': missing_percentage,
         'sample_values': sample_values,
-        'is_numeric': is_numeric,
-        'is_datetime': is_datetime,
+        'column_type': column_type,
+        #'is_numeric': is_numeric,
+        #'is_datetime': is_datetime,
         'total_count': total_count
     }
 
-def determine_column_type(series, unique_count):
+def determine_column_type(series, unique_count, total_rows):
     """Determine the recommended column type based on data characteristics"""
     is_numeric = pd.api.types.is_numeric_dtype(series)
     is_datetime = pd.api.types.is_datetime64_any_dtype(series)
+    unique_proportion = unique_count / total_rows
 
     if is_datetime:
         return 'datetime'
     elif unique_count == 2 and not is_numeric:
         return 'binary'
-    elif unique_count <= 10 and not is_numeric and not is_datetime:
-        return 'categorical'
     elif is_numeric:
+        if unique_count <= 5 and series.dtype.kind in 'iu': # Integer types with low card
+            return 'low_cardinality_categorical'
         return 'numerical'
+    elif unique_count <= 5 and not is_numeric and not is_datetime:
+        return 'low_cardinality_categorical'
+    elif unique_count >=6 and not is_numeric:
+        if unique_proportion > 0.9: # High uniqueness suggests text
+            return 'text'
+        return 'high_cardinality_categorical'
     else:
         return 'text'
 
@@ -142,7 +154,7 @@ def get_missing_value_recommendations(stats, recommended_type):
             recommendations.append(f"Consider dropping column (>{missing_percentage:.1f}% missing)")
         elif recommended_type == 'numerical':
             recommendations.append("Fill missing values with mean/median")
-        elif recommended_type in ['categorical', 'binary']:
+        elif recommended_type in ['low_cardinality_categorical', 'high_cardinality_categorical','binary']:
             recommendations.append("Fill missing values with mode or 'Unknown' category")
         elif recommended_type == 'datetime':
             recommendations.append("Fill missing dates with forward/backward fill or interpolation")
@@ -156,10 +168,10 @@ def get_type_specific_recommendations(series, recommended_type, stats):
     recommendations = []
     unique_count = stats['unique_count']
 
-    if recommended_type == 'categorical':
+    if recommended_type == 'low_cardinality_categorical':
         recommendations.append("Consider one-hot encoding or label encoding")
-        if unique_count > 5:
-            recommendations.append("High cardinality - consider grouping rare categories")
+    elif recommended_type == 'high_cardinality_categorical':
+        recommendations.append("Consider target encoding or embedding layers (advanced) or feature hashing")
 
     elif recommended_type == 'binary':
         recommendations.append("Consider binary encoding (0/1) or keep as categorical")

@@ -1,44 +1,455 @@
 """
-Main training script - orchestrates the complete ML workflow
+Fixed training script that properly uses existing preprocessing artifacts
 """
 import torch
 import torch.nn as nn
-from data_pipeline import DataPipeline
+import torch.optim as optim
+from torch.utils.data import DataLoader, TensorDataset
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.model_selection import train_test_split
+import pandas as pd
+import json
+import os
+from datetime import datetime
 
-def main():
-    # Data preparation
-    print("Preparing data...")
-    pipeline = DataPipeline()
+class StudentGradePredictor(nn.Module):
+    """Feedforward Neural Network for predicting student grades"""
+    def __init__(self, input_dim, hidden_dims=[128, 64, 32], dropout_rate=0.3):
+        super(StudentGradePredictor, self).__init__()
 
-    # Load and preprocess data
-    X_train, X_val, X_test, y_train, y_val, y_test = pipeline.prepare_training_data(
-        'data/student-mat.xlsx',
-        target_column='G3'
+        self.input_dim = input_dim
+        self.hidden_dims = hidden_dims
+        self.dropout_rate = dropout_rate
+
+        # Build the network layers
+        layers = []
+        prev_dim = input_dim
+
+        # Hidden layers
+        for hidden_dim in hidden_dims:
+            layers.extend([
+                nn.Linear(prev_dim, hidden_dim),
+                nn.BatchNorm1d(hidden_dim),
+                nn.ReLU(),
+                nn.Dropout(dropout_rate)
+            ])
+            prev_dim = hidden_dim
+
+        # Output layer (single neuron for regression)
+        layers.append(nn.Linear(prev_dim, 1))
+        self.network = nn.Sequential(*layers)
+        self._initialize_weights()
+
+    def _initialize_weights(self):
+        """Initialize network weights using Xavier initialization"""
+        for module in self.modules():
+            if isinstance(module, nn.Linear):
+                nn.init.xavier_uniform_(module.weight)
+                nn.init.constant_(module.bias, 0)
+
+    def forward(self, x):
+        return self.network(x).squeeze()
+
+    def get_model_info(self):
+        """Return model architecture information"""
+        total_params = sum(p.numel() for p in self.parameters())
+        trainable_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
+
+        return {
+            'input_dim': self.input_dim,
+            'hidden_dims': self.hidden_dims,
+            'dropout_rate': self.dropout_rate,
+            'total_parameters': total_params,
+            'trainable_parameters': trainable_params
+        }
+
+class ModelTrainer:
+    """Handles model training, validation, and evaluation"""
+    def __init__(self, model, device=None):
+        self.model = model
+        self.device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.model.to(self.device)
+        self.train_losses = []
+        self.val_losses = []
+        self.learning_rates = []
+
+    def train_epoch(self, train_loader, criterion, optimizer):
+        """Train for one epoch"""
+        self.model.train()
+        total_loss = 0
+        num_batches = 0
+
+        for batch_x, batch_y in train_loader:
+            batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
+
+            optimizer.zero_grad()
+            outputs = self.model(batch_x)
+            loss = criterion(outputs, batch_y)
+            loss.backward()
+
+            # Gradient clipping to prevent exploding gradients
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+            optimizer.step()
+
+            total_loss += loss.item()
+            num_batches += 1
+
+        return total_loss / num_batches
+
+    def validate(self, val_loader, criterion):
+        """Validate the model"""
+        self.model.eval()
+        total_loss = 0
+        num_batches = 0
+
+        with torch.no_grad():
+            for batch_x, batch_y in val_loader:
+                batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
+                outputs = self.model(batch_x)
+                loss = criterion(outputs, batch_y)
+                total_loss += loss.item()
+                num_batches += 1
+
+        return total_loss / num_batches
+
+    def train(self, train_loader, val_loader, epochs=100, lr=0.001,
+              patience=15, min_delta=1e-4, save_path='best_model.pt'):
+        """Train the model with early stopping"""
+        criterion = nn.MSELoss()
+        optimizer = optim.Adam(self.model.parameters(), lr=lr, weight_decay=1e-5)
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode='min', factor=0.5, patience=5, verbose=True
+        )
+
+        best_val_loss = float('inf')
+        patience_counter = 0
+
+        print(f"Training on {self.device}")
+        print(f"Model Info: {self.model.get_model_info()}")
+
+        for epoch in range(epochs):
+            train_loss = self.train_epoch(train_loader, criterion, optimizer)
+            val_loss = self.validate(val_loader, criterion)
+            scheduler.step(val_loss)
+            current_lr = optimizer.param_groups[0]['lr']
+
+            self.train_losses.append(train_loss)
+            self.val_losses.append(val_loss)
+            self.learning_rates.append(current_lr)
+
+            if val_loss < best_val_loss - min_delta:
+                best_val_loss = val_loss
+                patience_counter = 0
+                torch.save({
+                    'model_state_dict': self.model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'epoch': epoch,
+                    'val_loss': val_loss,
+                    'model_config': self.model.get_model_info()
+                }, save_path)
+            else:
+                patience_counter += 1
+
+            if (epoch + 1) % 10 == 0 or patience_counter == 0:
+                print(f'Epoch [{epoch+1}/{epochs}] - '
+                      f'Train Loss: {train_loss:.4f}, '
+                      f'Val Loss: {val_loss:.4f}, '
+                      f'LR: {current_lr:.6f}')
+
+            if patience_counter >= patience:
+                print(f'Early stopping at epoch {epoch+1}')
+                break
+
+        checkpoint = torch.load(save_path)
+        self.model.load_state_dict(checkpoint['model_state_dict'])
+        print(f"Training completed. Best validation loss: {best_val_loss:.4f}")
+
+        return {
+            'best_val_loss': best_val_loss,
+            'final_epoch': epoch + 1,
+            'train_losses': self.train_losses,
+            'val_losses': self.val_losses
+        }
+
+    def evaluate(self, test_loader):
+        """Evaluate model on test set"""
+        self.model.eval()
+        predictions = []
+        targets = []
+
+        with torch.no_grad():
+            for batch_x, batch_y in test_loader:
+                batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
+                outputs = self.model(batch_x)
+                predictions.extend(outputs.cpu().numpy())
+                targets.extend(batch_y.cpu().numpy())
+
+        predictions = np.array(predictions)
+        targets = np.array(targets)
+
+        mse = mean_squared_error(targets, predictions)
+        mae = mean_absolute_error(targets, predictions)
+        rmse = np.sqrt(mse)
+        r2 = r2_score(targets, predictions)
+
+        metrics = {'mse': mse, 'mae': mae, 'rmse': rmse, 'r2_score': r2}
+
+        print("Test Set Evaluation:")
+        print(f"  MSE: {mse:.4f}")
+        print(f"  MAE: {mae:.4f}")
+        print(f"  RMSE: {rmse:.4f}")
+        print(f"  R² Score: {r2:.4f}")
+
+        return metrics, predictions, targets
+
+    def plot_training_history(self):
+        """Plot training and validation losses"""
+        plt.figure(figsize=(12, 4))
+
+        plt.subplot(1, 2, 1)
+        plt.plot(self.train_losses, label='Training Loss')
+        plt.plot(self.val_losses, label='Validation Loss')
+        plt.title('Training History')
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss (MSE)')
+        plt.legend()
+        plt.grid(True)
+
+        plt.subplot(1, 2, 2)
+        plt.plot(self.learning_rates)
+        plt.title('Learning Rate Schedule')
+        plt.xlabel('Epoch')
+        plt.ylabel('Learning Rate')
+        plt.yscale('log')
+        plt.grid(True)
+
+        plt.tight_layout()
+        plt.show()
+
+    def plot_predictions(self, predictions, targets):
+        """Plot predictions vs actual values"""
+        plt.figure(figsize=(10, 8))
+
+        plt.subplot(2, 2, 1)
+        plt.scatter(targets, predictions, alpha=0.6)
+        plt.plot([targets.min(), targets.max()], [targets.min(), targets.max()], 'r--', lw=2)
+        plt.xlabel('Actual Grades')
+        plt.ylabel('Predicted Grades')
+        plt.title('Predictions vs Actual')
+        plt.grid(True)
+
+        plt.subplot(2, 2, 2)
+        residuals = predictions - targets
+        plt.scatter(targets, residuals, alpha=0.6)
+        plt.axhline(y=0, color='r', linestyle='--')
+        plt.xlabel('Actual Grades')
+        plt.ylabel('Residuals')
+        plt.title('Residuals Plot')
+        plt.grid(True)
+
+        plt.subplot(2, 2, 3)
+        plt.hist(residuals, bins=20, alpha=0.7)
+        plt.xlabel('Residuals')
+        plt.ylabel('Frequency')
+        plt.title('Distribution of Residuals')
+        plt.grid(True)
+
+        plt.subplot(2, 2, 4)
+        plt.hist(targets, bins=15, alpha=0.7, label='Actual', color='blue')
+        plt.hist(predictions, bins=15, alpha=0.7, label='Predicted', color='red')
+        plt.xlabel('Grades')
+        plt.ylabel('Frequency')
+        plt.title('Grade Distribution Comparison')
+        plt.legend()
+        plt.grid(True)
+
+        plt.tight_layout()
+        plt.show()
+
+def load_processed_excel_for_training(processed_excel_path, target_column='G3',
+                                    test_size=0.2, val_size=0.2, random_state=42):
+    """
+    Load the processed Excel file directly for training
+    This is the cleanest approach for your workflow
+    """
+    print(f"📄 Loading processed Excel: {processed_excel_path}")
+
+    # Check if file exists
+    if not os.path.exists(processed_excel_path):
+        raise FileNotFoundError(f"Processed Excel file not found: {processed_excel_path}")
+
+    # Load processed data
+    df = pd.read_excel(processed_excel_path)
+    print(f"   ✓ Loaded: {df.shape}")
+
+    # Separate features and target
+    if target_column not in df.columns:
+        raise ValueError(f"Target column '{target_column}' not found in processed data")
+
+    y = df[target_column].values
+    X = df.drop(target_column, axis=1).values
+
+    print(f"   ✓ Features: {X.shape}")
+    print(f"   ✓ Target: {y.shape}")
+
+    # Convert to tensors
+    X_tensor = torch.FloatTensor(X)
+    y_tensor = torch.FloatTensor(y)
+
+    # Create splits
+    X_temp, X_test, y_temp, y_test = train_test_split(
+        X_tensor, y_tensor, test_size=test_size, random_state=random_state
     )
 
-    print(f"Data shapes:")
-    print(f"  Training: {X_train.shape}")
-    print(f"  Validation: {X_val.shape}")
-    print(f"  Test: {X_test.shape}")
+    X_train, X_val, y_train, y_val = train_test_split(
+        X_temp, y_temp, test_size=val_size/(1-test_size), random_state=random_state
+    )
 
-    # Get input dimension for model
+    print(f"   ✓ Training: {X_train.shape}")
+    print(f"   ✓ Validation: {X_val.shape}")
+    print(f"   ✓ Test: {X_test.shape}")
+
+    return X_train, X_val, X_test, y_train, y_val, y_test
+
+def create_data_loaders(X_train, y_train, X_val, y_val, X_test, y_test, batch_size=32):
+    """Create DataLoaders for training, validation, and testing"""
+    train_dataset = TensorDataset(X_train, y_train)
+    val_dataset = TensorDataset(X_val, y_val)
+    test_dataset = TensorDataset(X_test, y_test)
+
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+
+    return train_loader, val_loader, test_loader
+
+def main():
+    """Main training pipeline using processed Excel file"""
+    print("=== Student Grade Prediction Training ===")
+    print("Using processed Excel file for clean, debuggable workflow")
+    print("=" * 60)
+
+    # Set random seeds for reproducibility
+    torch.manual_seed(42)
+    np.random.seed(42)
+
+    # Check if preprocessing artifacts exist
+    preprocessing_dir = 'preprocessing_artifacts'
+    processed_excel = os.path.join(preprocessing_dir, 'student-mat_train_processed.xlsx')
+    state_file = os.path.join(preprocessing_dir, 'preprocessor_state.json')
+
+    print("\n1. CHECKING PREPROCESSING ARTIFACTS...")
+
+    missing_files = []
+    if not os.path.exists(processed_excel):
+        missing_files.append(processed_excel)
+    if not os.path.exists(state_file):
+        missing_files.append(state_file)
+
+    if missing_files:
+        print("❌ ERROR: Required preprocessing files not found!")
+        for file in missing_files:
+            print(f"   Missing: {file}")
+        print("\nTo fix this:")
+        print("1. Run the data preparation pipeline first:")
+        print("   python prepare_data.py")
+        print("2. Or use the enhanced pipeline to generate artifacts")
+        return None
+
+    print("✅ All preprocessing artifacts found!")
+    print(f"   📄 Processed Excel: {processed_excel}")
+    print(f"   🔧 State file: {state_file}")
+
+    # Load processed data from Excel
+    print("\n2. LOADING PROCESSED DATA FROM EXCEL...")
+    try:
+        X_train, X_val, X_test, y_train, y_val, y_test = load_processed_excel_for_training(
+            processed_excel_path=processed_excel,
+            target_column='G3',
+            test_size=0.2,
+            val_size=0.2,
+            random_state=42
+        )
+    except Exception as e:
+        print(f"❌ Error loading processed data: {e}")
+        return None
+
+    # Create data loaders
+    print("\n3. CREATING DATA LOADERS...")
+    train_loader, val_loader, test_loader = create_data_loaders(
+        X_train, y_train, X_val, y_val, X_test, y_test, batch_size=32
+    )
+    print("✅ Data loaders created successfully!")
+
+    # Create model
+    print("\n4. CREATING MODEL...")
     input_dim = X_train.shape[1]
-    print(f"  Features: {input_dim}")
+    model = StudentGradePredictor(
+        input_dim=input_dim,
+        hidden_dims=[128, 64, 32],
+        dropout_rate=0.3
+    )
+    print(f"✅ Model created with {input_dim} input features!")
 
-    # TODO: Define your model here
-    # model = YourNeuralNetwork(input_dim=input_dim)
+    # Training
+    print("\n5. TRAINING MODEL...")
+    os.makedirs('models', exist_ok=True)
+    trainer = ModelTrainer(model)
 
-    # TODO: Define loss and optimizer
-    # criterion = nn.MSELoss()  # or appropriate loss for your task
-    # optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    training_results = trainer.train(
+        train_loader=train_loader,
+        val_loader=val_loader,
+        epochs=100,
+        lr=0.001,
+        patience=15,
+        save_path='models/best_student_grade_model.pt'
+    )
 
-    # TODO: Training loop
-    # train_model(model, X_train, y_train, X_val, y_val, criterion, optimizer)
+    # Evaluation
+    print("\n6. EVALUATING MODEL...")
+    metrics, predictions, targets = trainer.evaluate(test_loader)
 
-    # TODO: Evaluation
-    # evaluate_model(model, X_test, y_test)
+    # Visualization
+    print("\n7. GENERATING PLOTS...")
+    try:
+        trainer.plot_training_history()
+        trainer.plot_predictions(predictions, targets)
+    except Exception as e:
+        print(f"⚠️ Plotting skipped (display issues): {e}")
 
-    print("Data pipeline complete! Ready for model training.")
+    # Save results
+    print("\n8. SAVING RESULTS...")
+    results = {
+        'date': datetime.now().strftime('%Y-%m-%d %H:%M'),
+        'model_config': model.get_model_info(),
+        'training_results': training_results,
+        'test_metrics': metrics,
+        'data_source': processed_excel,
+        'preprocessing_artifacts': state_file
+    }
+
+    with open('models/training_results.json', 'w') as f:
+        json.dump(results, f, indent=2)
+
+    print("\n🎉 TRAINING COMPLETED SUCCESSFULLY!")
+    print("=" * 60)
+    print("Generated files:")
+    print(f"   🤖 Model: models/best_student_grade_model.pt")
+    print(f"   📊 Results: models/training_results.json")
+    print(f"\nModel Performance:")
+    print(f"   📈 R² Score: {metrics['r2_score']:.4f}")
+    print(f"   📉 RMSE: {metrics['rmse']:.4f}")
+    print(f"   📊 MAE: {metrics['mae']:.4f}")
+
+    return model, trainer, results
 
 if __name__ == "__main__":
-    main()
+    result = main()
+    if result:
+        model, trainer, results = result
+        print("\n✨ Training pipeline completed successfully!")
+        print("Your model is ready for inference using the same preprocessing artifacts.")
+    else:
+        print("\n❌ Training failed. Please fix the issues above and try again.")

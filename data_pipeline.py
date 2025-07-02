@@ -1,97 +1,205 @@
-"""
-High-level data pipeline for training and inference
-"""
 import pandas as pd
 import torch
 from sklearn.model_selection import train_test_split
+import os
 from data_analyzer import analyze_dataset
 from data_preprocessor import DataPreprocessor
 
 class DataPipeline:
-    """Complete data pipeline from raw data to PyTorch tensors"""
-
     def __init__(self, save_dir='preprocessing_artifacts'):
         self.preprocessor = DataPreprocessor(save_dir)
         self.column_config = None
+        self.save_dir = save_dir
 
-    def prepare_training_data(self, file_path, target_column=None,
-                            test_size=0.2, val_size=0.2, random_state=42):
+    def prepare_training_data_with_splits(self, file_path, target_column,test_size=0.2, val_size=0.2, random_state=42):
         """
-        Complete pipeline for training data preparation
+        Complete pipeline that generates separate Excel files for train/val/test
 
-        Args:
-            file_path: Path to training data
-            target_column: Name of target column (if supervised)
-            test_size: Proportion for test set
-            val_size: Proportion for validation set
-            random_state: Random seed
-
-        Returns:
-            tuple: (X_train, X_val, X_test, y_train, y_val, y_test) or just X splits if unsupervised
         """
-        # Analyze data first
-        print("Analyzing dataset structure...")
+        print("=" * 70)
+        print("SPLIT EXCEL DATA PIPELINE - MAXIMUM TRANSPARENCY")
+        print("=" * 70)
+        print(f" target column parameter from prepare_training_data_with_splits, {target_column} ")
+
+        # Step 1: Analyze dataset
+        print("\n1. ANALYZING DATASET STRUCTURE...")
         analysis = analyze_dataset(file_path)
+        print(f"   ✓ Raw data shape: {analysis['shape']}")
 
-        # Load data
+        # Step 2: Load and validate data
+        print("\n2. LOADING RAW DATA...")
         df = pd.read_excel(file_path)
+        print(f"   ✓ Loaded: {df.shape}")
 
-        # Separate features and target
-        if target_column and target_column in df.columns:
-            y = df[target_column]
-            X = df.drop(target_column, axis=1)
-        else:
-            y = None
-            X = df
+        if target_column not in df.columns:
+            raise ValueError(f"Target column '{target_column}' not found in dataset")
 
-        # Auto-detect column types from analysis
+        # Step 3: Configure preprocessing
+        print("\n3. CONFIGURING PREPROCESSING...")
+        X = df.drop(target_column, axis=1)
+
         self.column_config = self._extract_column_config(analysis, X.columns)
 
-        # Preprocess
-        X_processed = self._preprocess_features(X, fit=True)
+        # Step 4: Create raw data splits FIRST (before preprocessing)
+        print("\n4. CREATING RAW DATA SPLITS...")
+        train_df, val_df, test_df = self._split_raw_dataframe(df, test_size, val_size, random_state)
 
-        # Convert to tensors
-        X_tensor = torch.FloatTensor(X_processed.values)
-        y_tensor = torch.FloatTensor(y.values) if y is not None else None
+        # Step 5: Process each split and save to Excel
+        print("\n5. PROCESSING AND SAVING SPLITS...")
+        base_filename = os.path.splitext(os.path.basename(file_path))[0]
 
-        # Split data
-        if y is not None:
-            splits = self._split_supervised_data(X_tensor, y_tensor, test_size, val_size, random_state)
-        else:
-            splits = self._split_unsupervised_data(X_tensor, test_size, val_size, random_state)
+        # Process training data (fit=True)
+        print("   🔄 Processing training split...")
+        train_excel = f"{base_filename}_train_processed.xlsx"
+        X_train_processed = self.preprocessor.process_training_data(
+            df=train_df,
+            target_column=target_column,
+            column_config=self.column_config,
+            excel_filename=train_excel
+        )
+        y_train = train_df[target_column].values
 
-        # Save preprocessing state
-        self.preprocessor.save_state()
+        # Process validation data (fit=False)
+        print("   🔄 Processing validation split...")
+        val_excel = f"{base_filename}_val_processed.xlsx"
+        X_val_processed = self._process_split_with_target(
+            val_df, target_column, val_excel, fit=False
+        )
+        y_val = val_df[target_column].values
 
-        print(f"Training data prepared: {X_processed.shape[0]} samples, {X_processed.shape[1]} features")
-        return splits
+        # Process test data (fit=False)
+        print("   🔄 Processing test split...")
+        test_excel = f"{base_filename}_test_processed.xlsx"
+        X_test_processed = self._process_split_with_target(
+            test_df, target_column, test_excel, fit=False
+        )
+        y_test = test_df[target_column].values
 
-    def prepare_inference_data(self, file_path):
+        # Step 6: Convert to tensors
+        print("\n6. CONVERTING TO TENSORS...")
+        X_train = torch.FloatTensor(X_train_processed.values)
+        X_val = torch.FloatTensor(X_val_processed.values)
+        X_test = torch.FloatTensor(X_test_processed.values)
+        y_train = torch.FloatTensor(y_train)
+        y_val = torch.FloatTensor(y_val)
+        y_test = torch.FloatTensor(y_test)
+
+        print(f"   ✓ Training tensors: {X_train.shape}")
+        print(f"   ✓ Validation tensors: {X_val.shape}")
+        print(f"   ✓ Test tensors: {X_test.shape}")
+
+        # Step 7: Summary
+        print("\n7. PIPELINE SUMMARY")
+        print("   📁 Generated Files:")
+        print(f"      📄 {train_excel}")
+        print(f"      📄 {val_excel}")
+        print(f"      📄 {test_excel}")
+
+        return X_train, X_val, X_test, y_train, y_val, y_test, train_df, val_df, test_df
+
+    def load_split_data_for_training(self, base_filename):
         """
-        Prepare new data for inference using saved preprocessing state
+        Load pre-split Excel files for training
 
         Args:
-            file_path: Path to new data
+            base_filename: Base name (e.g., 'student-mat')
 
         Returns:
-            torch.Tensor: Preprocessed data ready for model
+            tuple: (X_train, X_val, X_test, y_train, y_val, y_test)
         """
-        # Load preprocessing state
-        self.preprocessor.load_state()
+        print("=" * 70)
+        print("LOADING PRE-SPLIT EXCEL FILES FOR TRAINING")
+        print("=" * 70)
 
-        # Load and preprocess data
-        df = pd.read_excel(file_path)
-        X_processed = self._preprocess_features(df, fit=False)
+        # Define file paths
+        train_file = os.path.join(self.save_dir, f"{base_filename}_train_processed.xlsx")
+        val_file = os.path.join(self.save_dir, f"{base_filename}_val_processed.xlsx")
+        test_file = os.path.join(self.save_dir, f"{base_filename}_test_processed.xlsx")
 
-        return torch.FloatTensor(X_processed.values)
+        # Check all files exist
+        files_to_check = [train_file, val_file, test_file]
+        missing_files = [f for f in files_to_check if not os.path.exists(f)]
+
+        if missing_files:
+            print("❌ ERROR: Missing split files!")
+            for file in missing_files:
+                print(f"   Missing: {file}")
+            print("\nRun the split pipeline first to generate these files.")
+            raise FileNotFoundError("Split Excel files not found")
+
+        print("✅ All split files found!")
+
+        # Load each split
+        def load_split(file_path, split_name):
+            print(f"   📄 Loading {split_name}: {os.path.basename(file_path)}")
+            df = pd.read_excel(file_path)
+            y = df['G3'].values  # Assuming G3 is target
+            X = df.drop('G3', axis=1).values
+            print(f"      Shape: {X.shape}")
+            return torch.FloatTensor(X), torch.FloatTensor(y)
+
+        X_train, y_train = load_split(train_file, "Training")
+        X_val, y_val = load_split(val_file, "Validation")
+        X_test, y_test = load_split(test_file, "Test")
+
+        return X_train, X_val, X_test, y_train, y_val, y_test
+
+    def _split_raw_dataframe(self, df, test_size, val_size, random_state):
+        """Split raw DataFrame into train/val/test before preprocessing"""
+        # First split: train+val vs test
+        train_val_df, test_df = train_test_split(
+            df, test_size=test_size, random_state=random_state, stratify=None
+        )
+
+        # Second split: train vs val
+        train_df, val_df = train_test_split(
+            train_val_df, test_size=val_size/(1-test_size), random_state=random_state
+        )
+
+        return train_df, val_df, test_df
+
+    def _process_split_with_target(self, df, target_column, excel_filename, fit=False):
+        """Process a data split and save with target included"""
+        # Temporarily disable auto Excel output
+        self.preprocessor.enable_excel_output(False)
+
+        # Process features only
+        X = df.drop(target_column, axis=1)
+        X_processed = self.preprocessor.process_and_save(
+            df=X,
+            target_column=None,
+            excel_filename=None,
+            numerical_columns=self.column_config.get('numerical', []),
+            low_cardinality_categorical_columns=self.column_config.get('low_cardinality_categorical', []),
+            high_cardinality_categorical_columns=self.column_config.get('low_cardinality_categorical_columns',[]),
+            binary_columns=self.column_config.get('binary', []),
+            datetime_columns=self.column_config.get('datetime', []),
+            fit=fit
+        )
+
+        # Re-enable Excel output and save manually with target
+        self.preprocessor.enable_excel_output(True)
+
+        # Create full DataFrame with target for Excel
+        full_df = X_processed.copy()
+        full_df[target_column] = df[target_column].values
+
+        # Save to Excel
+        excel_path = os.path.join(self.save_dir, excel_filename)
+        full_df.to_excel(excel_path, index=False)
+        print(f"      ✅ Saved: {excel_filename} ({full_df.shape})")
+
+        return X_processed
 
     def _extract_column_config(self, analysis, columns):
         """Extract column configuration from analysis results"""
         config = {
             'datetime': [],
-            'categorical': [],
             'binary': [],
-            'numerical': []
+            'numerical': [],
+            'low_cardinality_categorical': [],
+            'high_cardinality_categorical': [],
+            'text': []
         }
 
         for col in columns:
@@ -100,89 +208,53 @@ class DataPipeline:
                 config['datetime'].append(col)
             elif col_type == 'binary':
                 config['binary'].append(col)
-            elif col_type == 'categorical':
-                config['categorical'].append(col)
-            else:
+            elif col_type == 'low_cardinality_categorical':
+                config['low_cardinality_categorical'].append(col)
+            elif col_type == 'high_cardinality_categorical':
+                config['high_cardinality_categorical'].append(col)
+            elif col_type == 'numerical':
                 config['numerical'].append(col)
+            else:
+                config['text'].append(col)
 
+        print("Config:", config)
         return config
 
-    def _preprocess_features(self, df, fit=True):
-        """Apply all preprocessing steps"""
-        # Handle missing values
-        df = self.preprocessor.handle_missing_values(
-            df,
-            self.column_config['numerical'],
-            self.column_config['categorical'] + self.column_config['binary']
-        )
-
-        # Process datetime columns
-        if self.column_config['datetime']:
-            df = self.preprocessor.preprocess_datetime(df, self.column_config['datetime'])
-
-        # Process categorical columns
-        if self.column_config['categorical'] or self.column_config['binary']:
-            df = self.preprocessor.preprocess_categorical(
-                df,
-                self.column_config['categorical'],
-                self.column_config['binary']
-            )
-
-        # Align features (important for inference)
-        df = self.preprocessor.align_features(df, fit=fit)
-
-        # Scale features
-        df = self.preprocessor.scale_features(df, fit=fit)
-
-        return df
-
-    def _split_supervised_data(self, X, y, test_size, val_size, random_state):
-        """Split data for supervised learning"""
-        # First split: train+val vs test
-        X_temp, X_test, y_temp, y_test = train_test_split(
-            X, y, test_size=test_size, random_state=random_state
-        )
-
-        # Second split: train vs val
-        X_train, X_val, y_train, y_val = train_test_split(
-            X_temp, y_temp, test_size=val_size/(1-test_size), random_state=random_state
-        )
-
-        return X_train, X_val, X_test, y_train, y_val, y_test
-
-    def _split_unsupervised_data(self, X, test_size, val_size, random_state):
-        """Split data for unsupervised learning"""
-        # First split: train+val vs test
-        X_temp, X_test = train_test_split(
-            X, test_size=test_size, random_state=random_state
-        )
-
-        # Second split: train vs val
-        X_train, X_val = train_test_split(
-            X_temp, test_size=val_size/(1-test_size), random_state=random_state
-        )
-
-        return X_train, X_val, X_test
-
-# Convenience functions for quick usage
-def prepare_training_data(file_path, target_column=None, **kwargs):
-    """Quick function to prepare training data"""
+# Convenience functions
+def prepare_split_training_data(file_path, target_column='G3', **kwargs):
+    """Prepare training data with separate Excel files for each split"""
     pipeline = DataPipeline()
-    return pipeline.prepare_training_data(file_path, target_column, **kwargs)
+    return pipeline.prepare_training_data_with_splits(file_path, target_column, **kwargs)
 
-def prepare_inference_data(file_path):
-    """Quick function to prepare inference data"""
+def load_split_training_data(base_filename='student-mat'):
+    """Load pre-split Excel files for training"""
     pipeline = DataPipeline()
-    return pipeline.prepare_inference_data(file_path)
+    return pipeline.load_split_data_for_training(base_filename)
 
 if __name__ == "__main__":
-    # Example usage
-    pipeline = DataPipeline()
 
-    # For supervised learning
-    splits = pipeline.prepare_training_data('student-mat.xlsx', target_column='G3')
-    X_train, X_val, X_test, y_train, y_val, y_test = splits
+    print("\n" + "="*70)
+    print("DEMO: SPLIT EXCEL PIPELINE")
+    print("="*70)
 
-    # For unsupervised learning
-    # splits = pipeline.prepare_training_data('data.xlsx')
-    # X_train, X_val, X_test = splits
+    try:
+        # Generate split Excel files
+        pipeline = DataPipeline()
+        splits = pipeline.prepare_training_data_with_splits(
+            'data/student-mat.xlsx',
+            target_column='G3',
+            test_size=0.2,
+            val_size=0.2,
+            random_state=42
+        )
+
+        # Later, load the split files
+        print("\n" + "="*70)
+        print("DEMO: LOADING SPLIT FILES")
+        print("="*70)
+
+        X_train, X_val, X_test, y_train, y_val, y_test = pipeline.load_split_data_for_training('student-mat')
+
+        print("\n🎉 Split Excel pipeline demonstration complete!")
+
+    except FileNotFoundError: print("The pipeline is ready to use with your data!")
