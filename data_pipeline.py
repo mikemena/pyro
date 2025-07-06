@@ -165,6 +165,8 @@ class DataPipeline:
 
         # Process features only
         X = df.drop(target_column, axis=1)
+        if self.column_config is None:
+            raise ValueError("No column_config provided")
         X_processed = self.preprocessor.process_and_save(
             df=X,
             target_column=None,

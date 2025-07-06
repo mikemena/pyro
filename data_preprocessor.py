@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import RobustScaler, StandardScaler
 import json
 import os
 
@@ -257,6 +257,7 @@ class DataPreprocessor:
 
         # Reconstruct StandardScaler
         self.scaler = StandardScaler()
+        # self.scaler = RobustScaler()
         scaler_params = state['scaler_params']
         if scaler_params['mean_']:
             self.scaler.mean_ = np.array(scaler_params['mean_'])
@@ -315,7 +316,7 @@ class DataPreprocessor:
         Returns:
             pandas.DataFrame: Processed features ready for prediction
         """
-        print("🔮 Processing inference data...")
+        print("Processing inference data...")
 
         # Load existing state first
         self.load_state()

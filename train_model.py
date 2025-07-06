@@ -1,6 +1,3 @@
-"""
-Fixed training script that properly uses existing preprocessing artifacts
-"""
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -8,7 +5,7 @@ from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.model_selection import train_test_split
+# from sklearn.model_selection import train_test_split
 import pandas as pd
 import json
 import os
@@ -270,10 +267,7 @@ class ModelTrainer:
 
 def load_processed_excel_for_training(processed_excel_path, target_column='G3',
                                     test_size=0.2, val_size=0.2, random_state=42):
-    """
-    Load the processed Excel file directly for training
-    This is the cleanest approach for your workflow
-    """
+
     print(f"📄 Loading processed Excel: {processed_excel_path}")
 
     # Check if file exists
@@ -325,63 +319,43 @@ def create_data_loaders(X_train, y_train, X_val, y_val, X_test, y_test, batch_si
 
     return train_loader, val_loader, test_loader
 
+def load_dataset(file_path):
+    df = pd.read_excel(file_path)
+    X = df.drop('G3', axis=1).values
+    y = df['G3'].values
+    X_tensor = torch.tensor(X, dtype=torch.float32)
+    y_tensor = torch.tensor(y, dtype=torch.float32).view(-1,1)
+    return X_tensor, y_tensor
+
 def main():
-    """Main training pipeline using processed Excel file"""
-    print("=== Student Grade Prediction Training ===")
-    print("Using processed Excel file for clean, debuggable workflow")
-    print("=" * 60)
+    # Get datasets and state file
+    preprocessing_artifacts_dir = 'preprocessing_artifacts'
+    state_file = os.path.join(preprocessing_artifacts_dir, 'preprocessor_state.json')
+    train_file = os.path.join(preprocessing_artifacts_dir, 'student-mat_train_processed.xlsx')
+    val_file = os.path.join(preprocessing_artifacts_dir, 'student-mat_val_processed.xlsx')
+    test_file = os.path.join(preprocessing_artifacts_dir, 'student-mat_test_processed.xlsx')
 
     # Set random seeds for reproducibility
     torch.manual_seed(42)
     np.random.seed(42)
 
     # Check if preprocessing artifacts exist
-    preprocessing_dir = 'preprocessing_artifacts'
-    processed_excel = os.path.join(preprocessing_dir, 'student-mat_train_processed.xlsx')
-    state_file = os.path.join(preprocessing_dir, 'preprocessor_state.json')
-
     print("\n1. CHECKING PREPROCESSING ARTIFACTS...")
-
-    missing_files = []
-    if not os.path.exists(processed_excel):
-        missing_files.append(processed_excel)
-    if not os.path.exists(state_file):
-        missing_files.append(state_file)
-
-    if missing_files:
-        print("❌ ERROR: Required preprocessing files not found!")
-        for file in missing_files:
-            print(f"   Missing: {file}")
-        print("\nTo fix this:")
-        print("1. Run the data preparation pipeline first:")
-        print("   python prepare_data.py")
-        print("2. Or use the enhanced pipeline to generate artifacts")
-        return None
-
-    print("✅ All preprocessing artifacts found!")
-    print(f"   📄 Processed Excel: {processed_excel}")
-    print(f"   🔧 State file: {state_file}")
+    if not all(os.path.exists(f) for f in [state_file,train_file, val_file,test_file]):
+        print("One or more preprocessing artifacts are missing. Run the preprocessing step first")
 
     # Load processed data from Excel
     print("\n2. LOADING PROCESSED DATA FROM EXCEL...")
-    try:
-        X_train, X_val, X_test, y_train, y_val, y_test = load_processed_excel_for_training(
-            processed_excel_path=processed_excel,
-            target_column='G3',
-            test_size=0.2,
-            val_size=0.2,
-            random_state=42
-        )
-    except Exception as e:
-        print(f"❌ Error loading processed data: {e}")
-        return None
+    X_train, y_train = load_dataset(train_file)
+    X_val, y_val = load_dataset(val_file)
+    X_test, y_test = load_dataset(test_file)
 
     # Create data loaders
     print("\n3. CREATING DATA LOADERS...")
     train_loader, val_loader, test_loader = create_data_loaders(
         X_train, y_train, X_val, y_val, X_test, y_test, batch_size=32
     )
-    print("✅ Data loaders created successfully!")
+    print("Data loaders created successfully!")
 
     # Create model
     print("\n4. CREATING MODEL...")
@@ -391,7 +365,7 @@ def main():
         hidden_dims=[128, 64, 32],
         dropout_rate=0.3
     )
-    print(f"✅ Model created with {input_dim} input features!")
+    print(f"Model created with {input_dim} input features!")
 
     # Training
     print("\n5. TRAINING MODEL...")
@@ -417,7 +391,7 @@ def main():
         trainer.plot_training_history()
         trainer.plot_predictions(predictions, targets)
     except Exception as e:
-        print(f"⚠️ Plotting skipped (display issues): {e}")
+        print(f"Plotting skipped (display issues): {e}")
 
     # Save results
     print("\n8. SAVING RESULTS...")
@@ -426,7 +400,7 @@ def main():
         'model_config': model.get_model_info(),
         'training_results': training_results,
         'test_metrics': metrics,
-        'data_source': processed_excel,
+        # 'data_source': processed_excel,
         'preprocessing_artifacts': state_file
     }
 
