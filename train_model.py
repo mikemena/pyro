@@ -12,7 +12,7 @@ import os
 from datetime import datetime
 
 class StudentGradePredictor(nn.Module):
-    """Feedforward Neural Network for predicting student grades"""
+    """Feedforward Neural Network for predicting credentialing non responders"""
     def __init__(self, input_dim, hidden_dims=[128, 64, 32], dropout_rate=0.3):
         super(StudentGradePredictor, self).__init__()
 
@@ -35,7 +35,7 @@ class StudentGradePredictor(nn.Module):
             prev_dim = hidden_dim
 
         # Output layer (single neuron for regression)
-        layers.append(nn.Linear(prev_dim, 1))
+        layers.append(nn.Linear(prev_dim, 1)) # No activation
         self.network = nn.Sequential(*layers)
         self._initialize_weights()
 

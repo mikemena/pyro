@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import RobustScaler, StandardScaler
+from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import LabelEncoder
 import json
 import os
 
@@ -13,6 +14,8 @@ class DataPreprocessor:
         self.feature_columns = None
         self.column_mappings = {}
         self.target_encoding_mappings = {}
+        self.target_label_encoder = None  # For categorical targets
+        self.target_type = None  # Store target type (regression, binary, categorical)
         self.excel_output_enabled = True
         os.makedirs(save_dir, exist_ok=True)
 
@@ -47,8 +50,25 @@ class DataPreprocessor:
             df = pd.get_dummies(df, columns=categorical_to_encode, dtype=int)
         return df
 
-    # Transform a high-cardinality categorical feature into a numerical feature
+    def determine_target_type(self, series, unique_count, total_rows):
+        """Determine the target column type"""
+        is_numeric = pd.api.types.is_numeric_dtype(series)
+        unique_proportion = unique_count / total_rows
+
+        if is_numeric:
+            return 'regression'
+        elif unique_count == 2:
+            return 'binary'
+        elif unique_count <= 5 and not is_numeric:
+            return 'categorical'
+        elif unique_count >= 6 and not is_numeric:
+            if unique_proportion > 0.9:
+                return 'text'  # Unlikely for target, but included for completeness
+            return 'categorical'
+        return 'text'
+
     def target_encode(self, df, feature_column, target_data=None, alpha=0.1, fit=True):
+        """Transform a high-cardinality categorical feature into a numerical feature"""
         print(f"Debugging target_encode for feature: {feature_column} (fit={fit})")
         df = df.copy()
 
@@ -57,19 +77,23 @@ class DataPreprocessor:
                 raise ValueError("Target data must be provided when fit=True")
             if not isinstance(target_data, pd.Series):
                 target_data = pd.Series(target_data, index=df.index)
-            target_data = pd.to_numeric(target_data, errors='coerce')
-            global_mean = target_data.mean(skipna=True)
+            if target_data.isna().any():
+                raise ValueError(f"Target data contains {target_data.isna().sum()} NaNs")
+            global_mean = target_data.mean()
+            print(f"Global mean: {global_mean}")
             temp_df = pd.DataFrame({'feature': df[feature_column].astype(str), 'target': target_data})
             mapping = temp_df.groupby('feature')['target'].apply(
-                lambda x: (x.sum(skipna=True) + alpha * global_mean) / (x.count() + alpha)
+                lambda x: (x.sum() + alpha * global_mean) / (x.count() + alpha)
             ).to_dict()
-            # Save the mapping and global mean
+            print(f"Target encoding mapping: {mapping}")
             self.target_encoding_mappings[feature_column] = {
                 'mapping': mapping,
                 'global_mean': float(global_mean)
             }
             df[f"{feature_column}_encoded"] = df[feature_column].astype(str).map(mapping)
             df[f"{feature_column}_encoded"] = df[f"{feature_column}_encoded"].fillna(global_mean)
+            if df[f"{feature_column}_encoded"].isna().any():
+                print(f"Warning: NaNs detected in {feature_column}_encoded")
         else:
             if feature_column not in self.target_encoding_mappings:
                 raise ValueError(f"No target encoding mapping found for {feature_column}. Run fit=True first.")
@@ -129,10 +153,35 @@ class DataPreprocessor:
         if target_column and target_column in df.columns:
             target_data = df[target_column].copy()
             print(f"Target data dtype: {target_data.dtype}")
+            unique_targets = target_data.unique()
+            unique_count = len(unique_targets)
+            total_rows = len(target_data)
+            print(f"Unique target values: {unique_targets}")
+
+            # Determine target type
+            self.target_type = self.determine_target_type(target_data, unique_count, total_rows)
+            print(f"Detected target type: {self.target_type}")
+
+            # Encode categorical targets
+            if self.target_type in ['binary', 'categorical'] and fit:
+                self.target_label_encoder = LabelEncoder()
+                target_data_encoded = pd.Series(self.target_label_encoder.fit_transform(target_data), index=target_data.index)
+                print(f"Encoded target values: {target_data_encoded.unique()}")
+            elif self.target_type in ['binary', 'categorical'] and not fit:
+                if self.target_label_encoder is None:
+                    raise ValueError("Target label encoder not fitted. Run fit=True first.")
+                target_data_encoded = pd.Series(self.target_label_encoder.transform(target_data), index=target_data.index)
+            else:
+                target_data_encoded = target_data  # Regression target, no encoding needed
+
+            if target_data_encoded.isna().any():
+                raise ValueError(f"Target data contains {target_data_encoded.isna().sum()} NaNs after encoding")
+
             features_df = df.drop(target_column, axis=1).copy()
             print(f"   ✓ Separated target column '{target_column}'")
         else:
             target_data = None
+            target_data_encoded = None
             features_df = df.copy()
 
         # Store original shape for reporting
@@ -159,22 +208,46 @@ class DataPreprocessor:
             print(f"Processing high cardinality categorical columns...")
             for col in high_cardinality_categorical_columns:
                 if col in features_df.columns:
-                        features_df = self.target_encode(
-                            features_df,
-                            col,
-                            target_data=target_data if fit else None,
-                            fit=fit
-                        )
+                    print(f"Before target encoding for {col}:")
+                    print(features_df.head())
+                    features_df = self.target_encode(
+                        features_df,
+                        col,
+                        target_data=target_data_encoded if fit else None,
+                        fit=fit
+                    )
+                    print(f"After target encoding for {col}:")
+                    print(features_df.head())
+                    if features_df[f"{col}_encoded"].isna().any():
+                        print(f"Warning: NaNs detected in {col}_encoded")
+                        features_df.to_excel(os.path.join(self.save_dir, f"after_target_encode_{col}.xlsx"), index=False)
 
-        # Step 5: Align features (important for inference)
+        # Debug: Check for NaNs or invalid values before scaling
+        print("Debug: Checking data before scaling...")
+        nan_columns = features_df.columns[features_df.isna().any()].tolist()
+        inf_columns = features_df.columns[features_df.isin([np.inf, -np.inf]).any()].tolist()
+        print(f"NaN columns: {nan_columns}")
+        print(f"Infinity columns: {inf_columns}")
+        if nan_columns or inf_columns:
+            features_df.to_excel(os.path.join(self.save_dir, "before_scaling_debug.xlsx"), index=False)
+            print("Saved pre-scaling DataFrame to before_scaling_debug.xlsx")
+
+        # Step 5: Align features
         print("   🔄 Aligning features...")
         features_df = self.align_features(features_df, fit=fit)
 
         # Step 6: Scale features
         print("   📊 Scaling features...")
         features_df = self.scale_features(features_df, fit=fit)
+        print(f"Scaler n_samples_seen_: {self.scaler.n_samples_seen_}")
 
         print(f"   ✓ Preprocessing complete: {original_shape} → {features_df.shape}")
+
+        # Debug: Check for NaNs after scaling
+        if features_df.isna().any().any():
+            print("Warning: NaNs detected after scaling")
+            print(features_df.isna().sum())
+            features_df.to_excel(os.path.join(self.save_dir, "after_scaling_debug.xlsx"), index=False)
 
         # Step 7: Save to Excel if enabled
         if self.excel_output_enabled:
@@ -191,7 +264,6 @@ class DataPreprocessor:
     def _save_to_excel(self, features_df, target_data, target_column, excel_filename, fit):
         """Internal method to save processed data to Excel"""
         if excel_filename is None:
-            # Auto-generate filename
             suffix = "processed" if fit else "inference_processed"
             excel_filename = f"data_{suffix}.xlsx"
 
@@ -200,13 +272,12 @@ class DataPreprocessor:
         # Combine features and target for Excel output
         if target_data is not None:
             excel_df = features_df.copy()
-            excel_df[target_column] = target_data.values
+            excel_df[target_column] = target_data.values  # Use original target_data (not encoded)
             print(f"   📄 Saving processed data with target to Excel...")
         else:
             excel_df = features_df.copy()
             print(f"   📄 Saving processed features to Excel...")
 
-        # Save to Excel
         excel_df.to_excel(excel_path, index=False)
         print(f"   ✅ Excel saved: {excel_path}")
         print(f"      Shape: {excel_df.shape}")
@@ -225,11 +296,19 @@ class DataPreprocessor:
             raise ValueError("Scaler not fitted. Cannot save state.")
 
         # Extract StandardScaler parameters
+        n_samples_seen = (
+            int(self.scaler.n_samples_seen_[0])
+            if isinstance(self.scaler.n_samples_seen_, np.ndarray) and self.scaler.n_samples_seen_.size > 0
+            else int(self.scaler.n_samples_seen_)
+            if not isinstance(self.scaler.n_samples_seen_, np.ndarray)
+            else 0
+        )
+        print(f"Scaler n_samples_seen_ raw: {self.scaler.n_samples_seen_}, converted: {n_samples_seen}")
         scaler_params = {
             'mean_': self.scaler.mean_.tolist() if self.scaler.mean_ is not None else [],
             'scale_': self.scaler.scale_.tolist() if self.scaler.scale_ is not None else [],
             'var_': self.scaler.var_.tolist() if self.scaler.var_ is not None else [],
-            'n_samples_seen_': int(self.scaler.n_samples_seen_) if self.scaler.n_samples_seen_ is not None else 0
+            'n_samples_seen_': n_samples_seen
         }
 
         # Prepare state dictionary
@@ -237,7 +316,13 @@ class DataPreprocessor:
             'scaler_params': scaler_params,
             'feature_columns': self.feature_columns if self.feature_columns is not None else [],
             'column_mappings': self.column_mappings,
-            'target_encoding_mappings': self.target_encoding_mappings
+            'target_encoding_mappings': self.target_encoding_mappings,
+            'target_type': self.target_type,
+            'target_label_encoder_classes': (
+                self.target_label_encoder.classes_.tolist()
+                if self.target_label_encoder is not None
+                else []
+            )
         }
 
         # Save to JSON
@@ -251,13 +336,10 @@ class DataPreprocessor:
         if not os.path.exists(state_file):
             raise FileNotFoundError(f"No saved state found at {state_file}")
 
-        # Load JSON
         with open(state_file, 'r') as f:
             state = json.load(f)
 
-        # Reconstruct StandardScaler
         self.scaler = StandardScaler()
-        # self.scaler = RobustScaler()
         scaler_params = state['scaler_params']
         if scaler_params['mean_']:
             self.scaler.mean_ = np.array(scaler_params['mean_'])
@@ -265,34 +347,23 @@ class DataPreprocessor:
             self.scaler.var_ = np.array(scaler_params['var_'])
             self.scaler.n_samples_seen_ = scaler_params['n_samples_seen_']
 
-        # Load other state
         self.feature_columns = state['feature_columns']
         self.column_mappings = state['column_mappings']
-
-        # Load target encoding mappings
         self.target_encoding_mappings = state.get('target_encoding_mappings', {})
+        self.target_type = state.get('target_type', None)
+        if state.get('target_label_encoder_classes'):
+            self.target_label_encoder = LabelEncoder()
+            self.target_label_encoder.classes_ = np.array(state['target_label_encoder_classes'])
 
         print(f"✅ Loaded preprocessing state from {state_file}")
         print(f"   Features: {len(self.feature_columns)}")
         print(f"   Column mappings: {len(self.column_mappings)}")
         print(f"   Target encoding mappings: {len(self.target_encoding_mappings)}")
-
+        print(f"   Target type: {self.target_type}")
 
     def process_training_data(self, df, target_column, column_config, excel_filename=None):
-        """
-        Convenience method for processing training data
-
-        Args:
-            df: Raw training DataFrame
-            target_column: Name of target column
-            column_config: Dictionary with column type classifications
-            excel_filename: Custom Excel filename
-
-        Returns:
-            pandas.DataFrame: Processed features ready for training
-        """
+        """Convenience method for processing training data"""
         print("🎯 Processing training data...")
-
         return self.process_and_save(
             df=df,
             target_column=target_column,
@@ -306,84 +377,12 @@ class DataPreprocessor:
         )
 
     def process_inference_data(self, df, excel_filename=None):
-        """
-        Convenience method for processing inference data
-
-        Args:
-            df: Raw inference DataFrame
-            excel_filename: Custom Excel filename
-
-        Returns:
-            pandas.DataFrame: Processed features ready for prediction
-        """
+        """Convenience method for processing inference data"""
         print("Processing inference data...")
-
-        # Load existing state first
         self.load_state()
-
         return self.process_and_save(
             df=df,
             target_column=None,
             excel_filename=excel_filename or "inference_processed.xlsx",
             fit=False
         )
-
-# # Example usage demonstrating the clean integration
-# if __name__ == "__main__":
-#     print("🧪 DataPreprocessor Excel Output Demo")
-#     print("-" * 50)
-
-#     # Create sample data
-#     sample_data = pd.DataFrame({
-#         'school': ['GP', 'MS', 'GP'],
-#         'sex': ['F', 'M', 'F'],
-#         'age': [17, 18, 16],
-#         'Mjob': ['teacher', 'health', 'other'],
-#         'studytime': [2, 1, 3],
-#         'G3': [15, 12, 18]
-#     })
-
-#     print("Sample raw data:")
-#     print(sample_data)
-
-#     # Initialize preprocessor
-#     preprocessor = DataPreprocessor(save_dir='demo_artifacts')
-
-#     # Define column configuration
-#     column_config = {
-#         'numerical': ['age', 'studytime'],
-#         'categorical': ['Mjob'],
-#         'binary': ['school', 'sex']
-#     }
-
-#     # Process training data (generates Excel + artifacts)
-#     print("\n1. Processing training data...")
-#     processed_features = preprocessor.process_training_data(
-#         df=sample_data,
-#         target_column='G3',
-#         column_config=column_config,
-#         excel_filename='demo_training.xlsx'
-#     )
-
-#     print("\nProcessed features:")
-#     print(processed_features.head())
-
-#     # Process inference data (uses artifacts, generates Excel)
-#     print("\n2. Processing inference data...")
-#     new_student = pd.DataFrame({
-#         'school': ['GP'],
-#         'sex': ['M'],
-#         'age': [17],
-#         'Mjob': ['services'],
-#         'studytime': [2]
-#     })
-
-#     processed_inference = preprocessor.process_inference_data(
-#         df=new_student,
-#         excel_filename='demo_inference.xlsx'
-#     )
-
-#     print("\nProcessed inference data:")
-#     print(processed_inference)
-
-#     print("\nCheck demo_artifacts/ for generated files.")

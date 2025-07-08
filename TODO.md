@@ -8,13 +8,138 @@
 
 Research Needed about train_model.py
 
-[] Tools for regression, like Mean Squared Error (MSE) as the loss function, and includes early stopping to avoid overfitting
+[X] Tools for regression, like Mean Squared Error (MSE) as the loss function, and includes early stopping to avoid overfitting
 
-[] Training process also adjusts the learning rate and saves the best model based on validation performance
+[X] Training process also adjusts the learning rate and saves the best model based on validation performance
 
-[] Measures performance with metrics like MSE, Mean Absolute Error (MAE), Root Mean Squared Error (RMSE), and R² score, which are standard for checking how well the model predicts
+[X] Measures performance with metrics like MSE, Mean Absolute Error (MAE), Root Mean Squared Error (RMSE), and R² score, which are standard for checking how well the model predicts
 
-[] Tune hyperparameters like the number of layers or learning rate to see if you can improve performance, especially if the current results aren’t great.
+- This practice involves monitoring validation metrics during training and saving model checkpoints when performance improves. It's a form of model selection that ensures you keep the best version of your model.
+
+- Metrics vary significantly between regression and classification. Here's a comprehensive guide:
+
+# Regression Metrics
+
+- For regression (predicting continuous values), you typically use:
+
+## Mean Squared Error (MSE)
+
+from sklearn.metrics import mean_squared_error
+
+mse = mean_squared_error(y_true, y_pred)
+
+
+# Or in PyTorch:
+mse = torch.nn.functional.mse_loss(predictions, targets)
+
+# Interpretation:
+# - Penalizes large errors more (squared)
+# - Units: squared units of target (e.g., dollars²)
+# - Lower is better
+
+## Root Mean Squared Error (RMSE)
+
+import numpy as np
+
+rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+
+# Interpretation:
+# - Same units as target variable
+# - More interpretable than MSE
+# - If predicting house prices: RMSE = $10,000 means typical error
+
+## Mean Absolute Error (MAE)
+from sklearn.metrics import mean_absolute_error
+
+mae = mean_absolute_error(y_true, y_pred)
+
+# Interpretation:
+# - Average absolute difference
+# - Less sensitive to outliers than MSE
+# - Same units as target
+
+## R² Score (Coefficient of Determination)
+from sklearn.metrics import r2_score
+
+r2 = r2_score(y_true, y_pred)
+
+# Interpretation:
+# - 1.0 = perfect predictions
+# - 0.0 = no better than predicting mean
+# - <0 = worse than predicting mean
+# - 0.8 = model explains 80% of variance
+
+## Mean Absolute Percentage Error (MAPE)
+def mape(y_true, y_pred):
+    return np.mean(np.abs((y_true - y_pred) / y_true)) * 100
+
+# Interpretation:
+# - Percentage error (scale-independent)
+# - 10% MAPE = predictions off by 10% on average
+# - Bad for values near zero
+
+# Classification Metrics
+- For classification, completely different metrics:
+
+## Binary Classification
+from sklearn.metrics import (
+    accuracy_score, precision_score, recall_score,
+    f1_score, roc_auc_score, confusion_matrix
+)
+
+# 1. Accuracy - Overall correctness
+accuracy = accuracy_score(y_true, y_pred)
+# Problem: Misleading for imbalanced datasets
+
+# 2. Precision - When model says "positive", how often correct?
+precision = precision_score(y_true, y_pred)
+
+# 3. Recall (Sensitivity) - Of all actual positives, how many found?
+recall = recall_score(y_true, y_pred)
+
+# 4. F1 Score - Harmonic mean of precision & recall
+f1 = f1_score(y_true, y_pred)
+
+# 5. ROC-AUC - Area under ROC curve
+# Needs probabilities, not just predictions
+roc_auc = roc_auc_score(y_true, y_proba)
+
+# 6. Confusion Matrix - See all prediction types
+cm = confusion_matrix(y_true, y_pred)
+# [[True Negatives, False Positives],
+#  [False Negatives, True Positives]]
+
+## Multi-class Classification
+
+# Accuracy still works
+accuracy = accuracy_score(y_true, y_pred)
+
+# For precision/recall/F1, need averaging strategy
+precision = precision_score(y_true, y_pred, average='weighted')
+# average options: 'micro', 'macro', 'weighted'
+
+# Confusion matrix for detailed view
+cm = confusion_matrix(y_true, y_pred)
+# n×n matrix for n classes
+
+## Choosing Metrics Based on Problem
+- When to Use Each Metric
+Regression:
+
+MSE/RMSE: When large errors are particularly bad
+MAE: When all errors matter equally, robust to outliers
+R²: When you want to know proportion of variance explained
+MAPE: When you need scale-independent comparison
+
+Classification:
+
+Accuracy: Only when classes are balanced
+Precision: When false positives are costly (spam detection)
+Recall: When false negatives are costly (disease detection)
+F1: Balanced view of precision and recall
+ROC-AUC: Overall model quality, threshold-independent
+
+[X] Tune hyperparameters like the number of layers or learning rate to see if you can improve performance, especially if the current results aren’t great.
 
 - Here's a comprehensive guide on hyperparameters to tune when your model isn't performing well:
 
