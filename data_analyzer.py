@@ -66,6 +66,7 @@ def analyze_column(series, col_name):
     recommendations = generate_recommendations(series, recommended_type, stats)
 
     return {
+        'column_name': col_name,
         'unique_count': stats['unique_count'],
         'missing_count': stats['missing_count'],
         'missing_percentage': stats['missing_percentage'],
@@ -223,7 +224,7 @@ def get_data_quality_recommendations(stats, recommended_type):
     if unique_count == 1:
         recommendations.append("Column has only one unique value - consider dropping")
 
-    if unique_count == total_count and recommended_type != 'categorical':
+    if unique_count == total_count and recommended_type != 'text':
         recommendations.append("All values are unique - might be an ID column")
 
     return recommendations

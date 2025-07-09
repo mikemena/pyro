@@ -51,7 +51,6 @@ def prepare_training_data():
 
 def create_split_summary(train_df, val_df, test_df, debug_dir, target_column):
     """Create a summary Excel file for quick split analysis"""
-    import pandas as pd
     # Calculate total rows for percentage calculation
     total_rows = len(train_df) + len(val_df) + len(test_df)
 
@@ -119,9 +118,9 @@ def debug_splits(target_column='non_responder'):
             overlaps.append(f"Val-Test overlap detected! ({len(val_hashes & test_hashes)} rows)")
 
         if overlaps:
-                    print("❌ DATA LEAKAGE DETECTED:")
-                    for msg in overlaps:
-                        print(f"   {msg}")
+            print("❌ DATA LEAKAGE DETECTED:")
+            for msg in overlaps:
+                print(f"   {msg}")
         else:
             print("✅ No data leakage detected")
 

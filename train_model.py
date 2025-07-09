@@ -11,10 +11,10 @@ import json
 import os
 from datetime import datetime
 
-class StudentGradePredictor(nn.Module):
+class Predictor(nn.Module):
     """Feedforward Neural Network for predicting credentialing non responders"""
     def __init__(self, input_dim, hidden_dims=[128, 64, 32], dropout_rate=0.3):
-        super(StudentGradePredictor, self).__init__()
+        super(Predictor, self).__init__()
 
         self.input_dim = input_dim
         self.hidden_dims = hidden_dims
@@ -360,7 +360,7 @@ def main():
     # Create model
     print("\n4. CREATING MODEL...")
     input_dim = X_train.shape[1]
-    model = StudentGradePredictor(
+    model = Predictor(
         input_dim=input_dim,
         hidden_dims=[128, 64, 32],
         dropout_rate=0.3

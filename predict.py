@@ -9,13 +9,13 @@ from data_pipeline import DataPipeline
 import json
 import os
 
-class StudentGradePredictor(nn.Module):
+class Predictor(nn.Module):
     """
     Feedforward Neural Network for predicting student grades
     (Same architecture as training script)
     """
     def __init__(self, input_dim, hidden_dims=[128, 64, 32], dropout_rate=0.3):
-        super(StudentGradePredictor, self).__init__()
+        super(Predictor, self).__init__()
 
         self.input_dim = input_dim
         self.hidden_dims = hidden_dims
@@ -64,7 +64,7 @@ class GradePredictor:
         model_config = checkpoint['model_config']
 
         # Recreate model with same architecture
-        self.model = StudentGradePredictor(
+        self.model = Predictor(
             input_dim=model_config['input_dim'],
             hidden_dims=model_config['hidden_dims'],
             dropout_rate=model_config['dropout_rate']
