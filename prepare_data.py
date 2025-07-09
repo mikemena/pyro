@@ -2,6 +2,7 @@ import torch
 import os
 from data_pipeline import DataPipeline
 import pandas as pd
+from hashlib import sha1
 
 def prepare_training_data():
     """Prepare and save training data with both processed and raw splits"""
@@ -95,29 +96,32 @@ def debug_splits(target_column='non_responder'):
     debug_dir = 'debug_splits'
 
     try:
-        import pandas as pd
         train_df = pd.read_excel(os.path.join(debug_dir, 'raw_train_split.xlsx'))
         val_df = pd.read_excel(os.path.join(debug_dir, 'raw_val_split.xlsx'))
         test_df = pd.read_excel(os.path.join(debug_dir, 'raw_test_split.xlsx'))
 
         print("✅ Raw split files loaded successfully")
 
-        train_indices = set(train_df.index)
-        val_indices = set(val_df.index)
-        test_indices = set(test_df.index)
+        # Use hashes as unique identifiers to prevent data leakage detection
+        def hash_rows(df):
+            return set(df.astype(str).apply(lambda row: sha1('||'.join(row).encode()).hexdigest(), axis=1))
+
+        train_hashes = hash_rows(train_df)
+        val_hashes = hash_rows(val_df)
+        test_hashes = hash_rows(test_df)
 
         overlaps = []
-        if train_indices & val_indices:
-            overlaps.append(f"Train-Val overlap detected! ({len(train_indices & val_indices)} indices)")
-        if train_indices & test_indices:
-            overlaps.append(f"Train-Test overlap detected! ({len(train_indices & test_indices)} indices)")
-        if val_indices & test_indices:
-            overlaps.append(f"Val-Test overlap detected! ({len(val_indices & test_indices)} indices)")
+        if train_hashes & val_hashes:
+            overlaps.append(f"Train-Val overlap detected! ({len(train_hashes & val_hashes)} rows)")
+        if train_hashes & test_hashes:
+            overlaps.append(f"Train-Test overlap detected! ({len(train_hashes & test_hashes)} rows)")
+        if val_hashes & test_hashes:
+            overlaps.append(f"Val-Test overlap detected! ({len(val_hashes & test_hashes)} rows)")
 
         if overlaps:
-            print("❌ DATA LEAKAGE DETECTED:")
-            for overlap in overlaps:
-                print(f"   {overlap}")
+                    print("❌ DATA LEAKAGE DETECTED:")
+                    for msg in overlaps:
+                        print(f"   {msg}")
         else:
             print("✅ No data leakage detected")
 

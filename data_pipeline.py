@@ -136,8 +136,12 @@ class DataPipeline:
 
         return X_train, X_val, X_test, y_train, y_val, y_test
 
-    def _split_raw_dataframe(self, df, test_size, val_size, random_state, target_column):
+    def _split_raw_dataframe(self, df: pd.DataFrame, test_size, val_size, random_state, target_column):
         """Split raw DataFrame into train/val/test before preprocessing"""
+
+        # Shuffle to avoid order-based leakage
+        df = df.sample(frac=1, random_state=random_state).reset_index(drop=True)
+
         # Ensure unique indices
         df = df.reset_index(drop=True)
         # Use stratification for non-numeric targets
