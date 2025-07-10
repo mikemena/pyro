@@ -24,8 +24,8 @@ class DataPipeline:
         print("\n2. LOADING RAW DATA...")
         df = pd.read_excel(file_path)
         # Reset index to ensure unique indices
-        df = df.reset_index(drop=True)
-        print(f"   ✓ Loaded: {df.shape}")
+        # df = df.reset_index(drop=True)
+        # print(f"   ✓ Loaded: {df.shape}")
 
         if target_column not in df.columns:
             raise ValueError(f"Target column '{target_column}' not found in dataset")
@@ -146,6 +146,7 @@ class DataPipeline:
         df = df.reset_index(drop=True)
         # Use stratification for non-numeric targets
         stratify = df[target_column] if not pd.api.types.is_numeric_dtype(df[target_column]) else None
+
         # First split: train+val vs test
         train_val_df, test_df = train_test_split(
             df, test_size=test_size, random_state=random_state, stratify=stratify

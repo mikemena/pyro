@@ -38,8 +38,7 @@ class DataPreprocessor:
     def preprocess_categorical(self, df, categorical_columns, binary_columns=None):
         """Handle categorical and binary variables using OneHotEncoder"""
         df = df.copy()
-        categorical_to_encode = [col for col in (categorical_columns or []) + (binary_columns or [])
-                                if col in df.columns]
+        categorical_to_encode = [col for col in (categorical_columns or []) + (binary_columns or []) if col in df.columns]
 
         if not categorical_to_encode:
             return df
@@ -398,10 +397,9 @@ class DataPreprocessor:
             self.one_hot_encoder = OneHotEncoder(
                 sparse_output=False,
                 handle_unknown='ignore',
-                dtype=np.int32
+                dtype=np.int32 # type: ignore
             )
             self.one_hot_encoder.categories_ = [np.array(cats) for cats in one_hot_encoder_params['categories_']]
-            self.one_hot_encoder.feature_names_in_ = np.array(one_hot_encoder_params['feature_names_in_'])
             self.one_hot_encoder.n_features_in_ = one_hot_encoder_params['n_features_in_']
             # Set drop_idx_ to None to avoid issues with partial state
             self.one_hot_encoder.drop_idx_ = None
