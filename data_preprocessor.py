@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import OneHotEncoder
 import json
 import os
 
@@ -17,6 +18,7 @@ class DataPreprocessor:
         self.target_label_encoder = None  # For categorical targets
         self.target_type = None  # Store target type (regression, binary, categorical)
         self.excel_output_enabled = True
+        self.one_hot_encoder = None  # For categorical and binary columns
         os.makedirs(save_dir, exist_ok=True)
 
     def preprocess_datetime(self, df, date_columns):
@@ -34,20 +36,46 @@ class DataPreprocessor:
         return df
 
     def preprocess_categorical(self, df, categorical_columns, binary_columns=None):
-        """Handle categorical and binary variables"""
+        """Handle categorical and binary variables using OneHotEncoder"""
         df = df.copy()
-        if binary_columns:
-            for col in binary_columns:
-                if col in df.columns:
-                    unique_vals = df[col].dropna().unique()
-                    if len(unique_vals) == 2:
-                        mapping = {str(unique_vals[0]): 0, str(unique_vals[1]): 1}
-                        df[col] = df[col].map(mapping)
-                        self.column_mappings[col] = mapping
-        categorical_to_encode = [col for col in categorical_columns
-                               if col in df.columns and col not in (binary_columns or [])]
-        if categorical_to_encode:
-            df = pd.get_dummies(df, columns=categorical_to_encode, dtype=int)
+        categorical_to_encode = [col for col in (categorical_columns or []) + (binary_columns or [])
+                                if col in df.columns]
+
+        if not categorical_to_encode:
+            return df
+
+        print(f"Processing {len(categorical_to_encode)} categorical/binary columns with OneHotEncoder...")
+
+        # Convert columns to string to handle mixed types and ensure consistency
+        for col in categorical_to_encode:
+            df[col] = df[col].astype(str).fillna('Unknown')
+
+        if self.one_hot_encoder is None:
+            # Initialize encoder during fit
+            self.one_hot_encoder = OneHotEncoder(
+                sparse_output=False,
+                handle_unknown='ignore',
+                dtype=np.int32
+            )
+            encoded_data = self.one_hot_encoder.fit_transform(df[categorical_to_encode])
+        else:
+            # Use existing encoder for transform
+            encoded_data = self.one_hot_encoder.transform(df[categorical_to_encode])
+
+        # Get feature names from encoder
+        encoded_columns = self.one_hot_encoder.get_feature_names_out(categorical_to_encode)
+
+        # Create DataFrame with encoded columns
+        encoded_df = pd.DataFrame(
+            encoded_data,
+            columns=encoded_columns,
+            index=df.index
+        )
+
+        # Drop original categorical columns and concatenate encoded columns
+        df = df.drop(categorical_to_encode, axis=1)
+        df = pd.concat([df, encoded_df], axis=1)
+
         return df
 
     def determine_target_type(self, series, unique_count, total_rows):
@@ -114,8 +142,7 @@ class DataPreprocessor:
                 df[col] = df[col].fillna(fill_value)
         for col in categorical_columns:
             if col in df.columns and df[col].isnull().any():
-                fill_value = df[col].mode()[0] if not df[col].mode().empty else 'Unknown'
-                df[col] = df[col].fillna(fill_value)
+                df[col] = df[col].fillna('Unknown')
         return df
 
     def scale_features(self, df, fit=True):
@@ -198,7 +225,7 @@ class DataPreprocessor:
             print(f"Processing {len(datetime_columns)} datetime columns...")
             features_df = self.preprocess_datetime(features_df, datetime_columns)
 
-        # Step 3: Process low-cardinality categorical feature
+        # Step 3: Process low-cardinality categorical and binary features
         if low_cardinality_categorical_columns or binary_columns:
             print(f"Processing low cardinality categorical/binary columns...")
             features_df = self.preprocess_categorical(features_df, low_cardinality_categorical_columns or [], binary_columns)
@@ -311,6 +338,15 @@ class DataPreprocessor:
             'n_samples_seen_': n_samples_seen
         }
 
+        # Extract OneHotEncoder parameters
+        one_hot_encoder_params = {}
+        if self.one_hot_encoder is not None:
+            one_hot_encoder_params = {
+                'categories_': [cat.tolist() for cat in self.one_hot_encoder.categories_],
+                'feature_names_in_': self.one_hot_encoder.feature_names_in_.tolist(),
+                'n_features_in_': int(self.one_hot_encoder.n_features_in_)
+            }
+
         # Prepare state dictionary
         state = {
             'scaler_params': scaler_params,
@@ -322,7 +358,8 @@ class DataPreprocessor:
                 self.target_label_encoder.classes_.tolist()
                 if self.target_label_encoder is not None
                 else []
-            )
+            ),
+            'one_hot_encoder_params': one_hot_encoder_params
         }
 
         # Save to JSON
@@ -355,11 +392,26 @@ class DataPreprocessor:
             self.target_label_encoder = LabelEncoder()
             self.target_label_encoder.classes_ = np.array(state['target_label_encoder_classes'])
 
+        # Load OneHotEncoder state
+        one_hot_encoder_params = state.get('one_hot_encoder_params', {})
+        if one_hot_encoder_params:
+            self.one_hot_encoder = OneHotEncoder(
+                sparse_output=False,
+                handle_unknown='ignore',
+                dtype=np.int32
+            )
+            self.one_hot_encoder.categories_ = [np.array(cats) for cats in one_hot_encoder_params['categories_']]
+            self.one_hot_encoder.feature_names_in_ = np.array(one_hot_encoder_params['feature_names_in_'])
+            self.one_hot_encoder.n_features_in_ = one_hot_encoder_params['n_features_in_']
+            # Set drop_idx_ to None to avoid issues with partial state
+            self.one_hot_encoder.drop_idx_ = None
+
         print(f"✅ Loaded preprocessing state from {state_file}")
         print(f"   Features: {len(self.feature_columns)}")
         print(f"   Column mappings: {len(self.column_mappings)}")
         print(f"   Target encoding mappings: {len(self.target_encoding_mappings)}")
         print(f"   Target type: {self.target_type}")
+        print(f"   OneHotEncoder features: {len(one_hot_encoder_params.get('feature_names_in_', []))}")
 
     def process_training_data(self, df, target_column, column_config, excel_filename=None):
         """Convenience method for processing training data"""
