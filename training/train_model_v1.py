@@ -10,8 +10,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import pandas as pd
-import json
 from datetime import datetime
+import json
 
 class Predictor(nn.Module):
     """Simple Feedforward Neural Network for predicting student grades"""
@@ -223,12 +223,11 @@ def load_dataset(file_path):
     # Encode y if binary or categorical target
     if preprocessor.target_type in ['binary', 'categorical']:
         if preprocessor.target_label_encoder is None:
-            raise ValueError("Target LabelENcoder not loaded. Ensure preprocessor state is saved.")
+            raise ValueError("Target LabelEncoder not loaded. Ensure preprocessor state is saved.")
         y = preprocessor.target_label_encoder.transform(y)
 
     X_tensor = torch.tensor(X, dtype=torch.float32)
-    y_tensor = torch.tensor(y, dtype=torch.float32).view(-1,1)
-    #y_tensor = torch.tensor(y, dtype=torch.float32)  # Fixed: Keep 1D [N] for scalar regression
+    y_tensor = torch.tensor(y, dtype=torch.float32)
     return X_tensor, y_tensor
 
 def create_data_loaders(X_train, y_train, X_val, y_val, X_test, y_test, batch_size=32):
@@ -292,28 +291,31 @@ def main():
     default_optimizer = 'Adam'
 
     # 1. Tune Learning Rate (fix others to defaults)
-    print("\nTUNING LEARNING RATE...")
-    lrs = [1e-4, 5e-4, 1e-3, 5e-3, 1e-2]
-    best_lr = None
-    best_val_loss = float('inf')
-    for lr in lrs:
-        print(f"  Trying LR: {lr}")
-        model = Predictor(input_dim=input_dim, hidden_dims=default_hidden_dims, dropout_rate=default_dropout)
-        trainer = ModelTrainer(model)
-        save_path = f'models/trial_lr_{lr}.pt'
-        os.makedirs('models', exist_ok=True)
-        results = trainer.train(train_loader=create_data_loaders(X_train, y_train, X_val, y_val, X_test, y_test, batch_size=default_batch_size)[0],
-                                val_loader=create_data_loaders(X_train, y_train, X_val, y_val, X_test, y_test, batch_size=default_batch_size)[1],
-                                epochs=50, lr=lr, weight_decay=default_weight_decay, save_path=save_path)
-        if results['best_val_loss'] < best_val_loss:
-            best_val_loss = results['best_val_loss']
-            best_lr = lr
-    print(f"Best LR: {best_lr} (val loss: {best_val_loss:.4f})")
+
+    # print("\nTUNING LEARNING RATE...")
+    # lrs = [1e-4, 5e-4, 1e-3, 5e-3, 1e-2]
+    # best_lr = None # Replace with your best from step 1
+    # best_val_loss = float('inf')
+    # for lr in lrs:
+    #     print(f"  Trying LR: {lr}")
+    #     model = Predictor(input_dim=input_dim, hidden_dims=default_hidden_dims, dropout_rate=default_dropout)
+    #     trainer = ModelTrainer(model)
+    #     save_path = f'models/trial_lr_{lr}.pt'
+    #     os.makedirs('models', exist_ok=True)
+    #     results = trainer.train(train_loader=create_data_loaders(X_train, y_train, X_val, y_val, X_test, y_test, batch_size=default_batch_size)[0],
+    #                             val_loader=create_data_loaders(X_train, y_train, X_val, y_val, X_test, y_test, batch_size=default_batch_size)[1],
+    #                             epochs=50, lr=lr, weight_decay=default_weight_decay, save_path=save_path)
+    #     if results['best_val_loss'] < best_val_loss:
+    #         best_val_loss = results['best_val_loss']
+    #         best_lr = lr
+    # print(f"Best LR: {best_lr} (val loss: {best_val_loss:.4f})")
+
     # After running, hardcode best_lr below (e.g., lr = 0.001) and proceed to next tuning.
 
-    # # 2. Tune Architecture (fix best LR from above, others default)
+    # 2. Tune Architecture (fix best LR from above, others default)
+
     # print("\nTUNING ARCHITECTURE...")
-    # lr = best_lr  # Replace with your best from step 1
+    # lr = 0.001  # Replace with your best from step 1
     # hidden_sizes = [64, 128, 256, 512]
     # num_layers_list = [1, 2, 3, 4]
     # best_hidden_dims = None
@@ -332,12 +334,12 @@ def main():
     #             best_val_loss = results['best_val_loss']
     #             best_hidden_dims = hidden_dims
     # print(f"Best hidden_dims: {best_hidden_dims} (val loss: {best_val_loss:.4f})")
-    # # Hardcode best_hidden_dims for next step.
+    # Hardcode best_hidden_dims for next step.
 
-    # # 3. Tune Regularization (fix best LR + architecture from above)
+    # 3. Tune Regularization (fix best LR + architecture from above)
     # print("\nTUNING REGULARIZATION...")
-    # lr = best_lr  # From step 1
-    # hidden_dims = best_hidden_dims  # From step 2
+    # lr = 0.001 # From step 1
+    # hidden_dims = [64, 64, 64, 64]  # From step 2
     # dropouts = [0.1, 0.3, 0.5, 0.7]
     # weight_decays = [1e-5, 1e-4, 1e-3]
     # best_dropout = None
@@ -357,14 +359,15 @@ def main():
     #             best_dropout = dropout
     #             best_weight_decay = wd
     # print(f"Best dropout: {best_dropout}, weight_decay: {best_weight_decay} (val loss: {best_val_loss:.4f})")
-    # # Hardcode for next step.
 
-    # # 4. Tune Training Parameters (fix all best from above)
+    # Hardcode for next step.
+
+    # 4. Tune Training Parameters (fix all best from above)
     # print("\nTUNING TRAINING PARAMETERS...")
-    # lr = best_lr  # From step 1
-    # hidden_dims = best_hidden_dims  # From step 2
-    # dropout = best_dropout  # From step 3
-    # weight_decay = best_weight_decay  # From step 3
+    # lr = 0.001  # From step 1
+    # hidden_dims = [64, 64, 64, 64]  # From step 2
+    # dropout = 0.7  # From step 3
+    # weight_decay = 0.0001  # From step 3
     # batch_sizes = [16, 32, 64, 128]
     # optimizers = ['Adam', 'SGD', 'RMSprop']  # Assumed common choices
     # best_batch_size = None
@@ -387,27 +390,27 @@ def main():
     # print(f"Best batch_size: {best_batch_size}, optimizer: {best_optimizer} (val loss: {best_val_loss:.4f})")
 
     # Final training with best params (uncomment after all tuning)
-    # print("\nFINAL TRAINING WITH BEST PARAMS...")
-    # model = Predictor(input_dim=input_dim, hidden_dims=best_hidden_dims, dropout_rate=best_dropout)
-    # trainer = ModelTrainer(model)
-    # train_loader, val_loader, test_loader = create_data_loaders(X_train, y_train, X_val, y_val, X_test, y_test, batch_size=best_batch_size)
-    # training_results = trainer.train(train_loader, val_loader, epochs=50, lr=best_lr, weight_decay=best_weight_decay, save_path='models/best_final_model.pt')
-    # metrics, predictions, targets = trainer.evaluate(test_loader)
-    # trainer.plot_training_history()
-    # trainer.plot_predictions(predictions, targets)
+    print("\nFINAL TRAINING WITH BEST PARAMS...")
+    model = Predictor(input_dim=input_dim, hidden_dims=[64, 64, 64, 64], dropout_rate=0.7)
+    trainer = ModelTrainer(model)
+    train_loader, val_loader, test_loader = create_data_loaders(X_train, y_train, X_val, y_val, X_test, y_test, batch_size=16)
+    training_results = trainer.train(train_loader, val_loader, epochs=50, lr=0.001, weight_decay=0.0001, save_path='models/best_final_model.pt')
+    metrics, predictions, targets = trainer.evaluate(test_loader)
+    trainer.plot_training_history()
+    trainer.plot_predictions(predictions, targets)
 
-    # # Save final results
-    # results = {
-    #     'date': datetime.now().strftime('%Y-%m-%d %H:%M'),
-    #     'model_config': model.get_model_info(),
-    #     'training_results': training_results,
-    #     'test_metrics': metrics,
-    #     'preprocessing_artifacts': state_file,
-    #     'best_params': {'lr': best_lr, 'hidden_dims': best_hidden_dims, 'dropout': best_dropout, 'weight_decay': best_weight_decay, 'batch_size': best_batch_size, 'optimizer': best_optimizer}
-    # }
-    # with open('models/final_results.json', 'w') as f:
-    #     json.dump(results, f, indent=2)
-    # print("\n🎉 FINAL TRAINING COMPLETED!")
+    # Save final results
+    results = {
+        'date': datetime.now().strftime('%Y-%m-%d %H:%M'),
+        'model_config': model.get_model_info(),
+        'training_results': training_results,
+        'test_metrics': metrics,
+        'preprocessing_artifacts': state_file,
+        'best_params': {'lr': 0.001, 'hidden_dims': [64, 64, 64, 64], 'dropout': 0.7, 'weight_decay': 0.0001, 'batch_size': 16, 'optimizer': 'RMSprop'}
+    }
+    with open('models/final_results.json', 'w') as f:
+        json.dump(results, f, indent=2)
+    print("\n🎉 FINAL TRAINING COMPLETED!")
 
     return model, trainer, results
 
