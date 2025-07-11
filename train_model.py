@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from data_preprocessor import DataPreprocessor
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
 import matplotlib.pyplot as plt
@@ -320,9 +321,20 @@ def create_data_loaders(X_train, y_train, X_val, y_val, X_test, y_test, batch_si
     return train_loader, val_loader, test_loader
 
 def load_dataset(file_path):
+    # Load the preprocessor state
+    preprocessor = DataPreprocessor()
+    preprocessor.load_state()
+
     df = pd.read_excel(file_path)
-    X = df.drop('G3', axis=1).values
-    y = df['G3'].values
+    X = df.drop('non_responder', axis=1).values
+    y = df['non_responder'].values
+
+    #Encode y if its a binary/categorical target
+    if preprocessor.target_type in ['binary','categorical']:
+        if preprocessor.target_label_encoder is None:
+            raise ValueError("target LabelEncoder not loaded.Ensure preprocessor state is saved correctly.")
+        y = preprocessor.target_label_encoder.transform(y)
+
     X_tensor = torch.tensor(X, dtype=torch.float32)
     y_tensor = torch.tensor(y, dtype=torch.float32).view(-1,1)
     return X_tensor, y_tensor
@@ -331,9 +343,9 @@ def main():
     # Get datasets and state file
     preprocessing_artifacts_dir = 'preprocessing_artifacts'
     state_file = os.path.join(preprocessing_artifacts_dir, 'preprocessor_state.json')
-    train_file = os.path.join(preprocessing_artifacts_dir, 'student-mat_train_processed.xlsx')
-    val_file = os.path.join(preprocessing_artifacts_dir, 'student-mat_val_processed.xlsx')
-    test_file = os.path.join(preprocessing_artifacts_dir, 'student-mat_test_processed.xlsx')
+    train_file = os.path.join(preprocessing_artifacts_dir, 'cred_data_train_processed.xlsx')
+    val_file = os.path.join(preprocessing_artifacts_dir, 'cred_data_val_processed.xlsx')
+    test_file = os.path.join(preprocessing_artifacts_dir, 'cred_data_test_processed.xlsx')
 
     # Set random seeds for reproducibility
     torch.manual_seed(42)
