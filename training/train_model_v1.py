@@ -1,13 +1,16 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from data_preprocessor import DataPreprocessor
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import pandas as pd
 import json
-import os
 from datetime import datetime
 
 class Predictor(nn.Module):
@@ -209,9 +212,20 @@ class ModelTrainer:
         plt.show()
 
 def load_dataset(file_path):
+    # Load the preprocessor state
+    preprocessor = DataPreprocessor()
+    preprocessor.load_state()
+
     df = pd.read_excel(file_path)
     X = df.drop('non_responder', axis=1).values
     y = df['non_responder'].values
+
+    # Encode y if binary or categorical target
+    if preprocessor.target_type in ['binary', 'categorical']:
+        if preprocessor.target_label_encoder is None:
+            raise ValueError("Target LabelENcoder not loaded. Ensure preprocessor state is saved.")
+        y = preprocessor.target_label_encoder.transform(y)
+
     X_tensor = torch.tensor(X, dtype=torch.float32)
     y_tensor = torch.tensor(y, dtype=torch.float32).view(-1,1)
     #y_tensor = torch.tensor(y, dtype=torch.float32)  # Fixed: Keep 1D [N] for scalar regression
