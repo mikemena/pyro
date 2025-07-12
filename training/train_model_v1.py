@@ -9,6 +9,7 @@ from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, confusion_matrix
 import pandas as pd
 from datetime import datetime
 import json
@@ -38,7 +39,7 @@ class Predictor(nn.Module):
         # Output layer (single neuron for regression)
         layers.append(nn.Linear(prev_dim, 1))
         self.network = nn.Sequential(*layers)
-        self._initialize_weights()
+        # self._initialize_weights() # removed for nn.BCEWithLogitsLoss change
 
     def _initialize_weights(self):
         """Initialize network weights using Xavier initialization"""
@@ -80,13 +81,11 @@ class ModelTrainer:
 
         for batch_x, batch_y in train_loader:
             batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
-
             optimizer.zero_grad()
             outputs = self.model(batch_x)
             loss = criterion(outputs, batch_y)
             loss.backward()
             optimizer.step()
-
             total_loss += loss.item()
             num_batches += 1
 
@@ -109,10 +108,19 @@ class ModelTrainer:
         return total_loss / num_batches
 
     def train(self, train_loader, val_loader, epochs=50, lr=0.001, weight_decay=0.0,
-              patience=10, min_delta=1e-4, save_path='best_model.pt'):
+              patience=10, min_delta=1e-4, save_path='best_model.pt', optimizer_name='Adam'):
         """Train the model with early stopping (simplified: no scheduler, no clipping)"""
-        criterion = nn.MSELoss()
-        optimizer = optim.Adam(self.model.parameters(), lr=lr, weight_decay=weight_decay)
+        # Regression target
+        # criterion = nn.MSELoss()
+        # binary classification
+        criterion = nn.BCEWithLogitsLoss()
+
+        if optimizer_name == 'Adam':
+            optimizer = optim.Adam(self.model.parameters(), lr=lr, weight_decay=weight_decay)
+        elif optimizer_name == 'AdamW':
+            optimizer = optim.AdamW(self.model.parameters(), lr=lr, weight_decay=weight_decay)
+        else:
+            raise ValueError(f"Unsupported optimizer: {optimizer_name}")
 
         best_val_loss = float('inf')
         patience_counter = 0
@@ -167,19 +175,42 @@ class ModelTrainer:
         with torch.no_grad():
             for batch_x, batch_y in test_loader:
                 batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
-                outputs = self.model(batch_x)
-                predictions.extend(outputs.cpu().numpy())
+                logits = self.model(batch_x)
+                probabilities = torch.sigmoid(logits)
+                predictions.extend(probabilities.cpu().numpy())
                 targets.extend(batch_y.cpu().numpy())
 
-        predictions = np.array(predictions)
-        targets = np.array(targets)
+        predictions = np.array(predictions).flatten()
+        targets = np.array(targets).flatten()
+
+        # Apply threshold to get binary predictions
+        binary_preds = (predictions >= 0.5).astype(int)
+
+        # Classification metrics
+        acc = accuracy_score(targets, binary_preds)
+        f1 = f1_score(targets, binary_preds)
+        try:
+            auc = roc_auc_score(targets, predictions) # Use raw scores for AUC
+        except ValueError:
+            auc = None # Handle case where only one class is present in y_true
+
+        cm = confusion_matrix(targets, binary_preds)
 
         mse = mean_squared_error(targets, predictions)
         mae = mean_absolute_error(targets, predictions)
         rmse = np.sqrt(mse)
         r2 = r2_score(targets, predictions)
 
-        metrics = {'mse': mse, 'mae': mae, 'rmse': rmse, 'r2_score': r2}
+        metrics = {
+            'accuracy': acc,
+            'f1_score': f1,
+            'roc_auc': auc,
+            'confusion_matrix': cm,
+            'mse': mse,
+            'mae': mae,
+            'rmse': rmse,
+            'r2_score': r2
+        }
 
         print("Test Set Evaluation:")
         print(f"  MSE: {mse:.4f}")
@@ -203,11 +234,12 @@ class ModelTrainer:
 
     def plot_predictions(self, predictions, targets):
         plt.figure(figsize=(8, 6))
-        plt.scatter(targets, predictions, alpha=0.6)
-        plt.plot([targets.min(), targets.max()], [targets.min(), targets.max()], 'r--', lw=2)
-        plt.xlabel('Actual Grades')
-        plt.ylabel('Predicted Grades')
-        plt.title('Predictions vs Actual')
+        plt.hist(predictions[targets == 0], bins=20, alpha=0.5, label='Class 0', color='blue')
+        plt.hist(predictions[targets == 1], bins=20, alpha=0.5, label='Class 1', color='orange')
+        plt.xlabel('Predicted Probabilities')
+        plt.ylabel('Count')
+        plt.title('Distribution of Predicted Probabilities by Class')
+        plt.legend()
         plt.grid(True)
         plt.show()
 
@@ -334,6 +366,7 @@ def main():
     #             best_val_loss = results['best_val_loss']
     #             best_hidden_dims = hidden_dims
     # print(f"Best hidden_dims: {best_hidden_dims} (val loss: {best_val_loss:.4f})")
+
     # Hardcode best_hidden_dims for next step.
 
     # 3. Tune Regularization (fix best LR + architecture from above)
@@ -369,7 +402,7 @@ def main():
     # dropout = 0.7  # From step 3
     # weight_decay = 0.0001  # From step 3
     # batch_sizes = [16, 32, 64, 128]
-    # optimizers = ['Adam', 'SGD', 'RMSprop']  # Assumed common choices
+    # optimizers = ['Adam', 'AdamW']
     # best_batch_size = None
     # best_optimizer = None
     # best_val_loss = float('inf')
@@ -382,31 +415,32 @@ def main():
     #         save_path = f'models/trial_train_{bs}_{opt_name}.pt'
     #         results = trainer.train(train_loader=create_data_loaders(X_train, y_train, X_val, y_val, X_test, y_test, batch_size=bs)[0],
     #                                 val_loader=create_data_loaders(X_train, y_train, X_val, y_val, X_test, y_test, batch_size=bs)[1],
-    #                                 epochs=50, lr=lr, weight_decay=weight_decay, save_path=save_path)
+    #                                 epochs=50, lr=lr, weight_decay=weight_decay, save_path=save_path, optimizer_name=opt_name)
     #         if results['best_val_loss'] < best_val_loss:
     #             best_val_loss = results['best_val_loss']
     #             best_batch_size = bs
     #             best_optimizer = opt_name
-    # print(f"Best batch_size: {best_batch_size}, optimizer: {best_optimizer} (val loss: {best_val_loss:.4f})")
+    # print(f"Best batch_size: {best_batch_size}, Best optimizer: {best_optimizer} (val loss: {best_val_loss:.4f})")
 
     # Final training with best params (uncomment after all tuning)
     print("\nFINAL TRAINING WITH BEST PARAMS...")
     model = Predictor(input_dim=input_dim, hidden_dims=[64, 64, 64, 64], dropout_rate=0.7)
     trainer = ModelTrainer(model)
     train_loader, val_loader, test_loader = create_data_loaders(X_train, y_train, X_val, y_val, X_test, y_test, batch_size=16)
-    training_results = trainer.train(train_loader, val_loader, epochs=50, lr=0.001, weight_decay=0.0001, save_path='models/best_final_model.pt')
+    training_results = trainer.train(train_loader, val_loader, epochs=50, lr=0.001, weight_decay=0.0001, save_path='models/best_final_model.pt', optimizer_name='AdamW')
     metrics, predictions, targets = trainer.evaluate(test_loader)
     trainer.plot_training_history()
     trainer.plot_predictions(predictions, targets)
 
     # Save final results
+
     results = {
         'date': datetime.now().strftime('%Y-%m-%d %H:%M'),
         'model_config': model.get_model_info(),
         'training_results': training_results,
         'test_metrics': metrics,
         'preprocessing_artifacts': state_file,
-        'best_params': {'lr': 0.001, 'hidden_dims': [64, 64, 64, 64], 'dropout': 0.7, 'weight_decay': 0.0001, 'batch_size': 16, 'optimizer': 'RMSprop'}
+        'best_params': {'lr': 0.001, 'hidden_dims': [64, 64, 64, 64], 'dropout': 0.7, 'weight_decay': 0.0001, 'batch_size': 16, 'optimizer': 'AdamW'}
     }
     with open('models/final_results.json', 'w') as f:
         json.dump(results, f, indent=2)
