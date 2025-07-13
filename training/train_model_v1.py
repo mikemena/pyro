@@ -7,12 +7,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from data_preprocessor import DataPreprocessor
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
-import matplotlib.pyplot as plt
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, confusion_matrix
 import pandas as pd
 from datetime import datetime
 import json
+from visualize import ModelVisualizer
 
 class Predictor(nn.Module):
     """Simple Feedforward Neural Network for predicting student grades"""
@@ -217,31 +217,14 @@ class ModelTrainer:
         print(f"  MAE: {mae:.4f}")
         print(f"  RMSE: {rmse:.4f}")
         print(f"  R² Score: {r2:.4f}")
+        print(f"  Accuracy: {acc:.4f}")
+        print(f"  f1 Score: {f1:.4f}")
+        print(f"  roc auc: {auc:.4f}")
+        print(f"  Confusion Matrix: {cm}")
 
         return metrics, predictions, targets
 
-    # (Optional: Keep or remove plotting functions as needed)
-    def plot_training_history(self):
-        plt.figure(figsize=(10, 5))
-        plt.plot(self.train_losses, label='Training Loss')
-        plt.plot(self.val_losses, label='Validation Loss')
-        plt.title('Training History')
-        plt.xlabel('Epoch')
-        plt.ylabel('Loss (MSE)')
-        plt.legend()
-        plt.grid(True)
-        plt.show()
 
-    def plot_predictions(self, predictions, targets):
-        plt.figure(figsize=(8, 6))
-        plt.hist(predictions[targets == 0], bins=20, alpha=0.5, label='Class 0', color='blue')
-        plt.hist(predictions[targets == 1], bins=20, alpha=0.5, label='Class 1', color='orange')
-        plt.xlabel('Predicted Probabilities')
-        plt.ylabel('Count')
-        plt.title('Distribution of Predicted Probabilities by Class')
-        plt.legend()
-        plt.grid(True)
-        plt.show()
 
 def load_dataset(file_path):
     # Load the preprocessor state
@@ -249,8 +232,8 @@ def load_dataset(file_path):
     preprocessor.load_state()
 
     df = pd.read_excel(file_path)
-    X = df.drop('non_responder', axis=1).values
-    y = df['non_responder'].values
+    X = df.drop('Status', axis=1).values
+    y = df['Status'].values
 
     # Encode y if binary or categorical target
     if preprocessor.target_type in ['binary', 'categorical']:
@@ -277,7 +260,7 @@ def create_data_loaders(X_train, y_train, X_val, y_val, X_test, y_test, batch_si
 def main():
     # Make paths relative to the script's location (robust to cwd changes)
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    preprocessing_artifacts_dir = os.path.join(script_dir, '../preprocessing_artifacts')  # Go up one level as per your note
+    preprocessing_artifacts_dir = os.path.join(script_dir, '../preprocessing_artifacts')
 
     # Debug prints to verify paths
     print("\nDebug Info:")
@@ -290,9 +273,9 @@ def main():
         print("Artifacts dir does not exist at the path above.")
 
     state_file = os.path.join(preprocessing_artifacts_dir, 'preprocessor_state.json')
-    train_file = os.path.join(preprocessing_artifacts_dir, 'cred_data_train_processed.xlsx')
-    val_file = os.path.join(preprocessing_artifacts_dir, 'cred_data_val_processed.xlsx')
-    test_file = os.path.join(preprocessing_artifacts_dir, 'cred_data_test_processed.xlsx')
+    train_file = os.path.join(preprocessing_artifacts_dir, 'loan_default_train_processed.xlsx')
+    val_file = os.path.join(preprocessing_artifacts_dir, 'loan_default_val_processed.xlsx')
+    test_file = os.path.join(preprocessing_artifacts_dir, 'loan_default_test_processed.xlsx')
 
     # Check each file explicitly
     files_to_check = [state_file, train_file, val_file, test_file]
@@ -301,6 +284,11 @@ def main():
         print(f"Missing files: {missing_files}")
         print("Run the preprocessing step (e.g., prepare.py or similar) to generate them, or adjust the paths if incorrect.")
         return None
+
+    # Load preprocessor state
+    with open(state_file, 'r') as f:
+        preprocessor_state = json.load(f)
+    feature_names = preprocessor_state['feature_columns']
 
     # Set random seeds for reproducibility
     torch.manual_seed(42)
@@ -325,7 +313,7 @@ def main():
     # 1. Tune Learning Rate (fix others to defaults)
 
     # print("\nTUNING LEARNING RATE...")
-    # lrs = [1e-4, 5e-4, 1e-3, 5e-3, 1e-2]
+    # lrs = [1e-4, 5e-4, 1e-3, 5e-3, 1e-2, 2e-2, 5e-5]
     # best_lr = None # Replace with your best from step 1
     # best_val_loss = float('inf')
     # for lr in lrs:
@@ -336,7 +324,7 @@ def main():
     #     os.makedirs('models', exist_ok=True)
     #     results = trainer.train(train_loader=create_data_loaders(X_train, y_train, X_val, y_val, X_test, y_test, batch_size=default_batch_size)[0],
     #                             val_loader=create_data_loaders(X_train, y_train, X_val, y_val, X_test, y_test, batch_size=default_batch_size)[1],
-    #                             epochs=50, lr=lr, weight_decay=default_weight_decay, save_path=save_path)
+    #                             epochs=50, lr=lr, weight_decay=default_weight_decay, save_path=save_path, optimizer_name=default_optimizer)
     #     if results['best_val_loss'] < best_val_loss:
     #         best_val_loss = results['best_val_loss']
     #         best_lr = lr
@@ -347,7 +335,7 @@ def main():
     # 2. Tune Architecture (fix best LR from above, others default)
 
     # print("\nTUNING ARCHITECTURE...")
-    # lr = 0.001  # Replace with your best from step 1
+    # lr = 0.0005  # Replace with your best from step 1
     # hidden_sizes = [64, 128, 256, 512]
     # num_layers_list = [1, 2, 3, 4]
     # best_hidden_dims = None
@@ -361,7 +349,7 @@ def main():
     #         save_path = f'models/trial_arch_{num_layers}_{size}.pt'
     #         results = trainer.train(train_loader=create_data_loaders(X_train, y_train, X_val, y_val, X_test, y_test, batch_size=default_batch_size)[0],
     #                                 val_loader=create_data_loaders(X_train, y_train, X_val, y_val, X_test, y_test, batch_size=default_batch_size)[1],
-    #                                 epochs=50, lr=lr, weight_decay=default_weight_decay, save_path=save_path)
+    #                                 epochs=50, lr=lr, weight_decay=default_weight_decay, save_path=save_path, optimizer_name=default_optimizer)
     #         if results['best_val_loss'] < best_val_loss:
     #             best_val_loss = results['best_val_loss']
     #             best_hidden_dims = hidden_dims
@@ -370,9 +358,10 @@ def main():
     # Hardcode best_hidden_dims for next step.
 
     # 3. Tune Regularization (fix best LR + architecture from above)
+
     # print("\nTUNING REGULARIZATION...")
-    # lr = 0.001 # From step 1
-    # hidden_dims = [64, 64, 64, 64]  # From step 2
+    # lr = 0.0005 # From step 1
+    # hidden_dims = [128]  # From step 2
     # dropouts = [0.1, 0.3, 0.5, 0.7]
     # weight_decays = [1e-5, 1e-4, 1e-3]
     # best_dropout = None
@@ -386,7 +375,7 @@ def main():
     #         save_path = f'models/trial_reg_{dropout}_{wd}.pt'
     #         results = trainer.train(train_loader=create_data_loaders(X_train, y_train, X_val, y_val, X_test, y_test, batch_size=default_batch_size)[0],
     #                                 val_loader=create_data_loaders(X_train, y_train, X_val, y_val, X_test, y_test, batch_size=default_batch_size)[1],
-    #                                 epochs=50, lr=lr, weight_decay=wd, save_path=save_path)
+    #                                 epochs=50, lr=lr, weight_decay=wd, save_path=save_path, optimizer_name=default_optimizer)
     #         if results['best_val_loss'] < best_val_loss:
     #             best_val_loss = results['best_val_loss']
     #             best_dropout = dropout
@@ -396,11 +385,12 @@ def main():
     # Hardcode for next step.
 
     # 4. Tune Training Parameters (fix all best from above)
+
     # print("\nTUNING TRAINING PARAMETERS...")
-    # lr = 0.001  # From step 1
-    # hidden_dims = [64, 64, 64, 64]  # From step 2
+    # lr = 0.0005  # From step 1
+    # hidden_dims = [128]  # From step 2
     # dropout = 0.7  # From step 3
-    # weight_decay = 0.0001  # From step 3
+    # weight_decay = 1e-05 # From step 3
     # batch_sizes = [16, 32, 64, 128]
     # optimizers = ['Adam', 'AdamW']
     # best_batch_size = None
@@ -423,14 +413,25 @@ def main():
     # print(f"Best batch_size: {best_batch_size}, Best optimizer: {best_optimizer} (val loss: {best_val_loss:.4f})")
 
     # Final training with best params (uncomment after all tuning)
+
     print("\nFINAL TRAINING WITH BEST PARAMS...")
-    model = Predictor(input_dim=input_dim, hidden_dims=[64, 64, 64, 64], dropout_rate=0.7)
+    model = Predictor(input_dim=input_dim, hidden_dims=[128], dropout_rate=0.7)
     trainer = ModelTrainer(model)
-    train_loader, val_loader, test_loader = create_data_loaders(X_train, y_train, X_val, y_val, X_test, y_test, batch_size=16)
-    training_results = trainer.train(train_loader, val_loader, epochs=50, lr=0.001, weight_decay=0.0001, save_path='models/best_final_model.pt', optimizer_name='AdamW')
+    train_loader, val_loader, test_loader = create_data_loaders(X_train, y_train, X_val, y_val, X_test, y_test, batch_size=64)
+    training_results = trainer.train(train_loader, val_loader, epochs=50, lr=0.0005, weight_decay=1e-05, save_path='models/best_final_model.pt', optimizer_name='AdamW')
     metrics, predictions, targets = trainer.evaluate(test_loader)
-    trainer.plot_training_history()
-    trainer.plot_predictions(predictions, targets)
+
+    # Initialize visualizer
+    visualizer = ModelVisualizer(save_dir='plots')
+
+    # Generate visualizations
+    visualizer.plot_training_history(trainer.train_losses, trainer.val_losses, display=False, save=True)
+    visualizer.plot_confusion_matrix(targets, predictions, display=False, save=True)
+    visualizer.plot_data_distribution(X_train.numpy(), feature_names, display=False, save=True)
+    visualizer.plot_prediction_distribution(predictions, targets, display=False, save=True)
+    visualizer.plot_roc_curve(targets, predictions, display=False, save=True)
+    visualizer.plot_precision_recall_curve(targets, predictions, display=False, save=True)
+    visualizer.plot_metrics_bar(metrics, display=False, save=True)
 
     # Save final results
 
@@ -438,10 +439,21 @@ def main():
         'date': datetime.now().strftime('%Y-%m-%d %H:%M'),
         'model_config': model.get_model_info(),
         'training_results': training_results,
-        'test_metrics': metrics,
+        'test_metrics': {
+            'accuracy': metrics['accuracy'],
+            'f1_score': metrics['f1_score'],
+            'roc_auc': metrics['roc_auc'],
+            'confusion_matrix': metrics['confusion_matrix'].tolist(),
+            'mse': metrics['mse'],
+            'mae': metrics['mae'],
+            'rmse': float(metrics['rmse']),
+            'r2_score': metrics['r2_score']
+        },
         'preprocessing_artifacts': state_file,
-        'best_params': {'lr': 0.001, 'hidden_dims': [64, 64, 64, 64], 'dropout': 0.7, 'weight_decay': 0.0001, 'batch_size': 16, 'optimizer': 'AdamW'}
+        'best_params': {'lr': 0.0005, 'hidden_dims': [128], 'dropout': 0.7, 'weight_decay': 1e-05, 'batch_size': 64, 'optimizer': 'AdamW'}
     }
+    print(f"Results: {results}")
+
     with open('models/final_results.json', 'w') as f:
         json.dump(results, f, indent=2)
     print("\n🎉 FINAL TRAINING COMPLETED!")
