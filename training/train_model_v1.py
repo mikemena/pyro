@@ -15,7 +15,7 @@ import json
 from visualize import ModelVisualizer
 
 class Predictor(nn.Module):
-    """Simple Feedforward Neural Network for predicting student grades"""
+    """Simple Feedforward Neural Network for predicting classification target"""
     def __init__(self, input_dim, hidden_dims=[64], dropout_rate=0.0):
         super(Predictor, self).__init__()
 
@@ -224,8 +224,6 @@ class ModelTrainer:
 
         return metrics, predictions, targets
 
-
-
 def load_dataset(file_path):
     # Load the preprocessor state
     preprocessor = DataPreprocessor()
@@ -258,7 +256,7 @@ def create_data_loaders(X_train, y_train, X_val, y_val, X_test, y_test, batch_si
     return train_loader, val_loader, test_loader
 
 def main():
-    # Make paths relative to the script's location (robust to cwd changes)
+    # Make paths relative to the script's location
     script_dir = os.path.dirname(os.path.abspath(__file__))
     preprocessing_artifacts_dir = os.path.join(script_dir, '../preprocessing_artifacts')
 
@@ -285,7 +283,7 @@ def main():
         print("Run the preprocessing step (e.g., prepare.py or similar) to generate them, or adjust the paths if incorrect.")
         return None
 
-    # Load preprocessor state
+    # Load preprocessor state to get feature names for plotting
     with open(state_file, 'r') as f:
         preprocessor_state = json.load(f)
     feature_names = preprocessor_state['feature_columns']
