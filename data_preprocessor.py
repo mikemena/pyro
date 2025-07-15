@@ -213,6 +213,10 @@ class DataPreprocessor:
         # Store original shape for reporting
         original_shape = features_df.shape
 
+        # Add temporary index for inference data to ensure row matching, only if not already present
+        if not fit and 'temp_index' not in features_df.columns:
+            features_df['temp_index'] = np.arange(len(features_df))
+
         # Step 1: Handle missing values
         if numerical_columns or low_cardinality_categorical_columns:
             print("Handling missing values...")
@@ -258,14 +262,20 @@ class DataPreprocessor:
             features_df.to_excel(os.path.join(self.save_dir, "before_scaling_debug.xlsx"), index=False)
             print("Saved pre-scaling DataFrame to before_scaling_debug.xlsx")
 
-        # Step 5: Align features
+        # Step 5: Align features and scale, excluding temp_index if present
         print("   🔄 Aligning features...")
-        features_df = self.align_features(features_df, fit=fit)
+        columns_to_process = [col for col in features_df.columns if col != 'temp_index']
+        features_to_process = features_df[columns_to_process]
+        features_to_process = self.align_features(features_to_process, fit=fit)
 
-        # Step 6: Scale features
         print("   📊 Scaling features...")
-        features_df = self.scale_features(features_df, fit=fit)
-        print(f"Scaler n_samples_seen_: {self.scaler.n_samples_seen_}")
+        features_to_process = self.scale_features(features_to_process, fit=fit)
+
+        if not fit:
+            features_to_process['temp_index'] = features_df['temp_index']
+
+        features_df = features_to_process
+        print(f"Scaler n_samples_seen_: {self.scaler.n_samples_seen_ if self.scaler else 'N/A'}")
 
         print(f"   ✓ Preprocessing complete: {original_shape} → {features_df.shape}")
 

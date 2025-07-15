@@ -1,6 +1,7 @@
 import torch
 import os
 from data_pipeline import DataPipeline
+import numpy as np
 import pandas as pd
 from hashlib import sha1
 
@@ -35,6 +36,10 @@ def prepare_training_data():
     print("\n🔍 Saving raw dataframes for debugging...")
     debug_dir = 'debug_splits'
     os.makedirs(debug_dir, exist_ok=True)
+
+    # Add temp_index to validation and test raw splits for consistent merging in predictions
+    val_df['temp_index'] = np.arange(len(val_df))
+    test_df['temp_index'] = np.arange(len(test_df))
 
     train_df.to_excel(os.path.join(debug_dir, 'raw_train_split.xlsx'), index=False)
     val_df.to_excel(os.path.join(debug_dir, 'raw_val_split.xlsx'), index=False)

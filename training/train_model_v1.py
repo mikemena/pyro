@@ -227,10 +227,13 @@ class ModelTrainer:
 def load_dataset(file_path):
     # Load the preprocessor state
     preprocessor = DataPreprocessor()
-    preprocessor.load_state()
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    root_dir = os.path.dirname(script_dir)
+    state_file = os.path.join(root_dir, 'preprocessing_artifacts', 'preprocessor_state.json')
+    preprocessor.load_state(state_file)
 
     df = pd.read_excel(file_path)
-    X = df.drop('Status', axis=1).values
+    X = df.drop(['Status', 'temp_index'], axis=1, errors='ignore').values
     y = df['Status'].values
 
     # Encode y if binary or categorical target
@@ -333,7 +336,7 @@ def main():
     # 2. Tune Architecture (fix best LR from above, others default)
 
     # print("\nTUNING ARCHITECTURE...")
-    # lr = 0.0005  # Replace with your best from step 1
+    # lr = 0.0005 # Replace with your best from step 1
     # hidden_sizes = [64, 128, 256, 512]
     # num_layers_list = [1, 2, 3, 4]
     # best_hidden_dims = None
@@ -385,7 +388,7 @@ def main():
     # 4. Tune Training Parameters (fix all best from above)
 
     # print("\nTUNING TRAINING PARAMETERS...")
-    # lr = 0.0005  # From step 1
+    # lr = 0.0005 # From step 1
     # hidden_dims = [128]  # From step 2
     # dropout = 0.7  # From step 3
     # weight_decay = 1e-05 # From step 3

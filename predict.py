@@ -31,16 +31,24 @@ class Predictor(nn.Module):
     def forward(self, x):
         return self.network(x).squeeze()
 
-def load_dataset(file_path, preprocessor_state_path):
+def load_dataset(file_path, preprocessor_state_path, is_preprocessed=True):
     preprocessor = DataPreprocessor()
-    preprocessor.load_state(state_file=preprocessor_state_path)
+    preprocessor.load_state(preprocessor_state_path)
 
-    df =pd.read_excel(file_path)
-    X = df.drop('Status', axis=1).values # Drop 'Status' if present
+    df = pd.read_excel(file_path)
+
+    if not is_preprocessed:
+        print("Adding temp_index for new dataset...")
+        df['temp_index'] = np.arange(len(df))
+        print("Preprocessing new dataset...")
+        df = preprocessor.process_inference_data(df, excel_filename='new_dataset_processed.xlsx')
+
+    # Drop target column if present and exclude temp_index, then convert to tensor
+    X = df.drop(['Status', 'temp_index'], axis=1, errors='ignore').values  # Drop 'Status' and 'temp_index' if present
     X_tensor = torch.tensor(X, dtype=torch.float32)
 
     feature_names = preprocessor.feature_columns
-    return X_tensor, feature_names
+    return X_tensor, feature_names, df  # Return df which includes 'temp_index'
 
 def create_data_loader(X, batch_size=64):
     """Create DataLoaders for predictions"""
@@ -70,14 +78,28 @@ def main():
     dataset_file = os.path.join(preprocessing_artifacts_dir, 'loan_default_test_processed.xlsx')
 
     # Check for required files
-    for file_path in [state_file, model_file,dataset_file]:
+    for file_path in [state_file, model_file, dataset_file]:
         if not os.path.exists(file_path):
             print(f"Error: {file_path} not found")
             return
 
+    # Determine the original dataset path
+    is_preprocessed = True  # Set to True for test dataset, False for new raw dataset
+    if is_preprocessed:
+        original_dataset_path = os.path.join('debug_splits', 'raw_test_split.xlsx')
+    else:
+        original_dataset_path = dataset_file
+
+    # Load original dataset
+    df_original = pd.read_excel(original_dataset_path)
+
+    # For new datasets (not preprocessed), add temp_index since the raw file doesn't have it
+    if not is_preprocessed:
+        df_original['temp_index'] = np.arange(len(df_original))
+
     # Load preprocessor state and dataset
     print('LOADING DATASET AND PREPROCESSOR STATE...')
-    X, feature_names = load_dataset(dataset_file, state_file)
+    X, feature_names, input_df = load_dataset(dataset_file, state_file, is_preprocessed=is_preprocessed)
     data_loader = create_data_loader(X, batch_size=64)
 
     # Initialize model
@@ -93,13 +115,22 @@ def main():
     # Make predictions
     print('MAKING PREDICTIONS...')
     predictions = make_predictions(model, data_loader, device)
-    binary_predictions = (predictions >= 0.5).astype(int) # Threshold for binary classification
+    binary_predictions = (predictions >= 0.5).astype(int)  # Threshold for binary classification
 
-    # Save predictions
-    output_df = pd.DataFrame({
+    # Create predictions DataFrame with temp_index
+    pred_df = pd.DataFrame({
+        'temp_index': input_df['temp_index'],
         'Probability': predictions,
         'Prediction': binary_predictions
     })
+
+    # Merge with original data using temp_index and drop temp_index
+    output_df = df_original.merge(pred_df, on='temp_index', how='left')
+    output_df = output_df.drop('temp_index', axis=1)
+
+    # Optional: Check for row mismatch
+    if len(df_original) != len(input_df):
+        print("Warning: Row count mismatch between original and processed data.")
 
     output_file = os.path.join(script_dir, 'predictions/predictions.xlsx')
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
@@ -114,10 +145,10 @@ def main():
             'input_dim': input_dim,
             'hidden_dims': [128],
             'dropout_rate': 0.7
-            },
-            'num_predictions': len(predictions),
-            'output_file': output_file
-        }
+        },
+        'num_predictions': len(predictions),
+        'output_file': output_file
+    }
     with open(os.path.join(script_dir, 'predictions/prediction_results.json'), 'w') as f:
         json.dump(results, f, indent=2)
     print("Prediction results saved.")
