@@ -366,14 +366,17 @@ class DataPreprocessor:
         with open(state_file, 'w') as f:
             json.dump(state, f, indent=2)
 
-    def load_state(self):
+    def load_state(self, state_file=None):
         """Load preprocessing state from JSON"""
-        # construct the path relative to the script's location
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        state_file = os.path.join(script_dir, 'preprocessing_artifacts', 'preprocessor_state.json')
+        # Use provided state_file or construct the path relative to the script's location
+        if state_file is None:
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            state_file = os.path.join(script_dir, 'preprocessing_artifacts')
+
         if not os.path.exists(state_file):
             raise FileNotFoundError(f"No saved state found at {state_file}")
 
+        print(f'state_file: {state_file}')
         with open(state_file, 'r') as f:
             state = json.load(f)
 

@@ -243,4 +243,4 @@ def detect_outliers(series):
     return len(outliers)
 
 if __name__ == "__main__":
-    results = analyze_dataset('data/cred_data.xlsx')
+    results = analyze_dataset('data/loan_default.xlsx')
