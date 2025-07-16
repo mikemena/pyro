@@ -1,302 +1,158 @@
-"""
-Inference script for predicting student grades using trained model
-"""
 import torch
 import torch.nn as nn
+from torch.utils.data import DataLoader, TensorDataset
 import pandas as pd
 import numpy as np
-from data_pipeline import DataPipeline
-import json
 import os
+import json
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from data_preprocessor import DataPreprocessor
+from datetime import datetime
 
 class Predictor(nn.Module):
-    """
-    Feedforward Neural Network for predicting student grades
-    (Same architecture as training script)
-    """
-    def __init__(self, input_dim, hidden_dims=[128, 64, 32], dropout_rate=0.3):
+    def __init__(self, input_dim, hidden_dims=[128], dropout_rate=0.7):
         super(Predictor, self).__init__()
-
         self.input_dim = input_dim
         self.hidden_dims = hidden_dims
         self.dropout_rate = dropout_rate
-
-        # Build the network layers
         layers = []
         prev_dim = input_dim
-
         for hidden_dim in hidden_dims:
             layers.extend([
                 nn.Linear(prev_dim, hidden_dim),
-                nn.BatchNorm1d(hidden_dim),
                 nn.ReLU(),
                 nn.Dropout(dropout_rate)
             ])
             prev_dim = hidden_dim
-
         layers.append(nn.Linear(prev_dim, 1))
         self.network = nn.Sequential(*layers)
 
     def forward(self, x):
         return self.network(x).squeeze()
 
-class GradePredictor:
-    """
-    Class for loading trained model and making predictions
-    """
-    def __init__(self, model_path='best_student_grade_model.pt',
-                 preprocessing_dir='preprocessing_artifacts'):
-        self.model_path = model_path
-        self.preprocessing_dir = preprocessing_dir
-        self.model = None
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.pipeline = DataPipeline(save_dir=preprocessing_dir)
+def load_dataset(file_path, preprocessor_state_path, is_preprocessed=True):
+    preprocessor = DataPreprocessor()
+    preprocessor.load_state(preprocessor_state_path)
 
-        self._load_model()
+    df = pd.read_excel(file_path)
 
-    def _load_model(self):
-        """Load the trained model"""
-        if not os.path.exists(self.model_path):
-            raise FileNotFoundError(f"Model file not found: {self.model_path}")
+    if not is_preprocessed:
+        print("Adding temp_index for new dataset...")
+        df['temp_index'] = np.arange(len(df))
+        print("Preprocessing new dataset...")
+        df = preprocessor.process_inference_data(df, excel_filename='new_dataset_processed.xlsx')
 
-        # Load checkpoint
-        checkpoint = torch.load(self.model_path, map_location=self.device)
-        model_config = checkpoint['model_config']
+    # Drop target column if present and exclude temp_index, then convert to tensor
+    X = df.drop(['Status', 'temp_index'], axis=1, errors='ignore').values  # Drop 'Status' and 'temp_index' if present
+    X_tensor = torch.tensor(X, dtype=torch.float32)
 
-        # Recreate model with same architecture
-        self.model = Predictor(
-            input_dim=model_config['input_dim'],
-            hidden_dims=model_config['hidden_dims'],
-            dropout_rate=model_config['dropout_rate']
-        )
+    feature_names = preprocessor.feature_columns
+    return X_tensor, feature_names, df  # Return df which includes 'temp_index'
 
-        # Load trained weights
-        self.model.load_state_dict(checkpoint['model_state_dict'])
-        self.model.to(self.device)
-        self.model.eval()
+def create_data_loader(X, batch_size=64):
+    """Create DataLoaders for predictions"""
+    dataset = TensorDataset(X)
+    return DataLoader(dataset, batch_size=batch_size, shuffle=False)
 
-        print(f"Model loaded successfully from {self.model_path}")
-        print(f"Model architecture: {model_config}")
+def make_predictions(model, data_loader, device):
+    """Make predictions with the trained model"""
+    model.eval()
+    predictions = []
+    with torch.no_grad():
+        for batch_x in data_loader:
+            batch_x = batch_x[0].to(device)
+            logits = model(batch_x)
+            probabilities = torch.sigmoid(logits)
+            predictions.extend(probabilities.cpu().numpy())
+    return np.array(predictions).flatten()
 
-    def predict_from_file(self, file_path, save_results=True):
-        """
-        Predict grades for students in an Excel file
+def main():
+    # Make paths relative to the script's location
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    preprocessing_artifacts_dir = os.path.join(script_dir, 'preprocessing_artifacts')
+    state_file = os.path.join(preprocessing_artifacts_dir, 'preprocessor_state.json')
+    model_file = os.path.join(script_dir, 'training/models/best_final_model.pt')
 
-        Args:
-            file_path: Path to Excel file with student data
-            save_results: Whether to save predictions to file
+    # Specify the dataset for predictions
+    dataset_file = os.path.join(preprocessing_artifacts_dir, 'loan_default_test_processed.xlsx')
 
-        Returns:
-            pandas.DataFrame: Original data with predictions
-        """
-        print(f"Loading data from {file_path}...")
+    # Check for required files
+    for file_path in [state_file, model_file, dataset_file]:
+        if not os.path.exists(file_path):
+            print(f"Error: {file_path} not found")
+            return
 
-        # Load and preprocess data
-        X_processed = self.pipeline.prepare_inference_data(file_path)
+    # Determine the original dataset path
+    is_preprocessed = True  # Set to True for test dataset, False for new raw dataset
+    if is_preprocessed:
+        original_dataset_path = os.path.join('debug_splits', 'raw_test_split.xlsx')
+    else:
+        original_dataset_path = dataset_file
 
-        # Make predictions
-        with torch.no_grad():
-            X_tensor = X_processed.to(self.device)
-            predictions = self.model(X_tensor).cpu().numpy()
+    # Load original dataset
+    df_original = pd.read_excel(original_dataset_path)
 
-        # Load original data for results
-        original_data = pd.read_excel(file_path)
+    # For new datasets (not preprocessed), add temp_index since the raw file doesn't have it
+    if not is_preprocessed:
+        df_original['temp_index'] = np.arange(len(df_original))
 
-        # Add predictions to original data
-        results_df = original_data.copy()
-        results_df['Predicted_Grade'] = predictions
-        results_df['Predicted_Grade'] = results_df['Predicted_Grade'].round(2)
+    # Load preprocessor state and dataset
+    print('LOADING DATASET AND PREPROCESSOR STATE...')
+    X, feature_names, input_df = load_dataset(dataset_file, state_file, is_preprocessed=is_preprocessed)
+    data_loader = create_data_loader(X, batch_size=64)
 
-        # Calculate confidence intervals (rough approximation)
-        # In practice, you'd want to implement proper uncertainty quantification
-        results_df['Prediction_Confidence'] = 'High'  # Placeholder
+    # Initialize model
+    input_dim = X.shape[1]
+    model = Predictor(input_dim=input_dim, hidden_dims=[128], dropout_rate=0.7)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model.to(device)
 
-        print(f"Generated predictions for {len(results_df)} students")
-        print(f"Average predicted grade: {predictions.mean():.2f}")
-        print(f"Grade range: {predictions.min():.2f} - {predictions.max():.2f}")
+    # Load trained model weights
+    checkpoint = torch.load(model_file, map_location=device)
+    model.load_state_dict(checkpoint['model_state_dict'])
 
-        if save_results:
-            output_path = file_path.replace('.xlsx', '_predictions.xlsx')
-            results_df.to_excel(output_path, index=False)
-            print(f"Results saved to {output_path}")
+    # Make predictions
+    print('MAKING PREDICTIONS...')
+    predictions = make_predictions(model, data_loader, device)
+    binary_predictions = (predictions >= 0.5).astype(int)  # Threshold for binary classification
 
-        return results_df
+    # Create predictions DataFrame with temp_index
+    pred_df = pd.DataFrame({
+        'temp_index': input_df['temp_index'],
+        'Probability': predictions,
+        'Prediction': binary_predictions
+    })
 
-    def predict_single_student(self, student_data):
-        """
-        Predict grade for a single student
+    # Merge with original data using temp_index and drop temp_index
+    output_df = df_original.merge(pred_df, on='temp_index', how='left')
+    output_df = output_df.drop('temp_index', axis=1)
 
-        Args:
-            student_data: Dictionary with student features
+    # Optional: Check for row mismatch
+    if len(df_original) != len(input_df):
+        print("Warning: Row count mismatch between original and processed data.")
 
-        Returns:
-            float: Predicted grade
-        """
-        # Convert to DataFrame
-        df = pd.DataFrame([student_data])
+    output_file = os.path.join(script_dir, 'predictions/predictions.xlsx')
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    output_df.to_excel(output_file, index=False)
+    print(f"Predictions saved to {output_file}")
 
-        # Save temporarily to use existing pipeline
-        temp_file = 'temp_student.xlsx'
-        df.to_excel(temp_file, index=False)
-
-        try:
-            # Use existing prediction pipeline
-            X_processed = self.pipeline.prepare_inference_data(temp_file)
-
-            with torch.no_grad():
-                X_tensor = X_processed.to(self.device)
-                prediction = self.model(X_tensor).cpu().numpy()[0]
-
-            return round(float(prediction), 2)
-
-        finally:
-            # Clean up temp file
-            if os.path.exists(temp_file):
-                os.remove(temp_file)
-
-    def batch_predict(self, student_list):
-        """
-        Predict grades for multiple students
-
-        Args:
-            student_list: List of dictionaries with student features
-
-        Returns:
-            list: List of predicted grades
-        """
-        df = pd.DataFrame(student_list)
-        temp_file = 'temp_students.xlsx'
-        df.to_excel(temp_file, index=False)
-
-        try:
-            X_processed = self.pipeline.prepare_inference_data(temp_file)
-
-            with torch.no_grad():
-                X_tensor = X_processed.to(self.device)
-                predictions = self.model(X_tensor).cpu().numpy()
-
-            return [round(float(pred), 2) for pred in predictions]
-
-        finally:
-            if os.path.exists(temp_file):
-                os.remove(temp_file)
-
-    def get_feature_importance_simulation(self, baseline_student, feature_variations=None):
-        """
-        Simulate feature importance by varying individual features
-        This is a simple approach - for production, use proper feature importance methods
-
-        Args:
-            baseline_student: Dictionary with baseline student features
-            feature_variations: Dictionary specifying how to vary each feature
-
-        Returns:
-            Dictionary with feature impact analysis
-        """
-        if feature_variations is None:
-            # Default variations for common features
-            feature_variations = {
-                'age': [15, 16, 17, 18, 19, 20],
-                'studytime': [1, 2, 3, 4],
-                'failures': [0, 1, 2, 3],
-                'absences': [0, 5, 10, 15, 20, 25]
-            }
-
-        baseline_prediction = self.predict_single_student(baseline_student)
-        feature_impacts = {}
-
-        for feature, values in feature_variations.items():
-            if feature in baseline_student:
-                impacts = []
-                for value in values:
-                    modified_student = baseline_student.copy()
-                    modified_student[feature] = value
-                    prediction = self.predict_single_student(modified_student)
-                    impact = prediction - baseline_prediction
-                    impacts.append({'value': value, 'prediction': prediction, 'impact': impact})
-
-                feature_impacts[feature] = {
-                    'baseline_value': baseline_student[feature],
-                    'baseline_prediction': baseline_prediction,
-                    'variations': impacts
-                }
-
-        return feature_impacts
-
-def demo_predictions():
-    """Demonstrate the prediction functionality"""
-    print("=== Student Grade Prediction Demo ===")
-
-    # Initialize predictor
-    try:
-        predictor = GradePredictor()
-    except FileNotFoundError:
-        print("Error: Trained model not found. Please run the training script first.")
-        return
-
-    # Example 1: Single student prediction
-    print("\n1. Single Student Prediction:")
-    example_student = {
-        'school': 'GP',
-        'sex': 'F',
-        'age': 17,
-        'address': 'U',
-        'famsize': 'GT3',
-        'Pstatus': 'T',
-        'Medu': 4,
-        'Fedu': 4,
-        'traveltime': 2,
-        'studytime': 3,
-        'failures': 0,
-        'schoolsup': 'yes',
-        'famsup': 'yes',
-        'paid': 'no',
-        'activities': 'yes',
-        'nursery': 'yes',
-        'higher': 'yes',
-        'internet': 'yes',
-        'romantic': 'no',
-        'famrel': 4,
-        'freetime': 3,
-        'goout': 2,
-        'Dalc': 1,
-        'Walc': 1,
-        'health': 5,
-        'absences': 2,
-        'G1': 15,
-        'G2': 16,
-        'Mjob': 'teacher',
-        'Fjob': 'teacher',
-        'reason': 'reputation',
-        'guardian': 'mother'
+    # Save results summary
+    results = {
+        'date': datetime.now().strftime('%Y-%m-%d %H:%M'),
+        'dataset': dataset_file,
+        'model_config': {
+            'input_dim': input_dim,
+            'hidden_dims': [128],
+            'dropout_rate': 0.7
+        },
+        'num_predictions': len(predictions),
+        'output_file': output_file
     }
-
-    predicted_grade = predictor.predict_single_student(example_student)
-    print(f"Predicted grade for example student: {predicted_grade}")
-
-    # Example 2: Feature impact analysis
-    print("\n2. Feature Impact Analysis:")
-    impacts = predictor.get_feature_importance_simulation(example_student)
-
-    for feature, analysis in impacts.items():
-        print(f"\n{feature.upper()}:")
-        print(f"  Baseline: {analysis['baseline_value']} → {analysis['baseline_prediction']:.2f}")
-        print("  Variations:")
-        for var in analysis['variations']:
-            print(f"    {var['value']} → {var['prediction']:.2f} (impact: {var['impact']:+.2f})")
-
-    print("\n3. Batch Prediction Example:")
-    # Example students with different characteristics
-    students = [
-        {**example_student, 'studytime': 1, 'failures': 2, 'absences': 10},
-        {**example_student, 'studytime': 4, 'failures': 0, 'absences': 0},
-        {**example_student, 'age': 19, 'studytime': 2, 'Dalc': 3, 'Walc': 3}
-    ]
-
-    predictions = predictor.batch_predict(students)
-    print("Batch predictions:")
-    for i, pred in enumerate(predictions):
-        print(f"  Student {i+1}: {pred}")
+    with open(os.path.join(script_dir, 'predictions/prediction_results.json'), 'w') as f:
+        json.dump(results, f, indent=2)
+    print("Prediction results saved.")
 
 if __name__ == "__main__":
-    demo_predictions()
+    main()
+    print("Prediction pipeline completed!")

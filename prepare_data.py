@@ -1,6 +1,7 @@
 import torch
 import os
 from data_pipeline import DataPipeline
+import numpy as np
 import pandas as pd
 from hashlib import sha1
 
@@ -10,8 +11,8 @@ def prepare_training_data():
 
     pipeline = DataPipeline()
     X_train, X_val, X_test, y_train, y_val, y_test, train_df, val_df, test_df = pipeline.prepare_training_data_with_splits(
-        'data/cred_data.xlsx',
-        target_column='non_responder',
+        'data/loan_default.xlsx',
+        target_column='Status',
         test_size=0.2,
         val_size=0.2,
         random_state=42
@@ -36,6 +37,10 @@ def prepare_training_data():
     debug_dir = 'debug_splits'
     os.makedirs(debug_dir, exist_ok=True)
 
+    # Add temp_index to validation and test raw splits for consistent merging in predictions
+    val_df['temp_index'] = np.arange(len(val_df))
+    test_df['temp_index'] = np.arange(len(test_df))
+
     train_df.to_excel(os.path.join(debug_dir, 'raw_train_split.xlsx'), index=False)
     val_df.to_excel(os.path.join(debug_dir, 'raw_val_split.xlsx'), index=False)
     test_df.to_excel(os.path.join(debug_dir, 'raw_test_split.xlsx'), index=False)
@@ -45,7 +50,7 @@ def prepare_training_data():
     print(f"   📄 raw_val_split.xlsx ({val_df.shape})")
     print(f"   📄 raw_test_split.xlsx ({test_df.shape})")
 
-    create_split_summary(train_df, val_df, test_df, debug_dir, target_column='non_responder')
+    create_split_summary(train_df, val_df, test_df, debug_dir, target_column='Status')
 
     return X_train, X_val, X_test, y_train, y_val, y_test
 
@@ -89,7 +94,7 @@ def create_split_summary(train_df, val_df, test_df, debug_dir, target_column):
         else:
             print(f"      Target distribution: {row['Target_Distribution']}")
 
-def debug_splits(target_column='non_responder'):
+def debug_splits(target_column='Status'):
     """Function to help debug splitting issues after training"""
     print("🔍 DEBUGGING SPLIT INTEGRITY...")
     debug_dir = 'debug_splits'

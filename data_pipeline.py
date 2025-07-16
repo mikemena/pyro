@@ -24,8 +24,8 @@ class DataPipeline:
         print("\n2. LOADING RAW DATA...")
         df = pd.read_excel(file_path)
         # Reset index to ensure unique indices
-        df = df.reset_index(drop=True)
-        print(f"   ✓ Loaded: {df.shape}")
+        # df = df.reset_index(drop=True)
+        # print(f"   ✓ Loaded: {df.shape}")
 
         if target_column not in df.columns:
             raise ValueError(f"Target column '{target_column}' not found in dataset")
@@ -124,8 +124,8 @@ class DataPipeline:
         def load_split(file_path, split_name):
             print(f"   📄 Loading {split_name}: {os.path.basename(file_path)}")
             df = pd.read_excel(file_path)
-            y = df['non_responder'].values
-            X = df.drop('non_responder', axis=1).values
+            y = df['Status'].values
+            X = df.drop('Status', axis=1).values
             print(f"      Shape: {X.shape}")
             y = y if self.preprocessor.target_type == 'regression' else self.preprocessor.target_label_encoder.transform(y)
             return torch.FloatTensor(X), torch.FloatTensor(y)
@@ -146,6 +146,7 @@ class DataPipeline:
         df = df.reset_index(drop=True)
         # Use stratification for non-numeric targets
         stratify = df[target_column] if not pd.api.types.is_numeric_dtype(df[target_column]) else None
+
         # First split: train+val vs test
         train_val_df, test_df = train_test_split(
             df, test_size=test_size, random_state=random_state, stratify=stratify
@@ -211,11 +212,11 @@ class DataPipeline:
         print("Config:", config)
         return config
 
-def prepare_split_training_data(file_path, target_column='non_responder', **kwargs):
+def prepare_split_training_data(file_path, target_column='Status', **kwargs):
     pipeline = DataPipeline()
     return pipeline.prepare_training_data_with_splits(file_path, target_column, **kwargs)
 
-def load_split_training_data(base_filename='cred'):
+def load_split_training_data(base_filename='loan'):
     pipeline = DataPipeline()
     return pipeline.load_split_data_for_training(base_filename)
 
@@ -226,8 +227,8 @@ if __name__ == "__main__":
     try:
         pipeline = DataPipeline()
         splits = pipeline.prepare_training_data_with_splits(
-            'data/cred_data.xlsx',
-            target_column='non_responder',
+            'data/loan_default.xlsx',
+            target_column='Status',
             test_size=0.2,
             val_size=0.2,
             random_state=42
@@ -235,7 +236,7 @@ if __name__ == "__main__":
         print("\n" + "="*70)
         print("DEMO: LOADING SPLIT FILES")
         print("="*70)
-        X_train, X_val, X_test, y_train, y_val, y_test = pipeline.load_split_data_for_training('cred')
+        X_train, X_val, X_test, y_train, y_val, y_test = pipeline.load_split_data_for_training('loan')
         print("\n Split Excel pipeline complete!")
     except FileNotFoundError:
         print("The pipeline is ready to use with your data!")
