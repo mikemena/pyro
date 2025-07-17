@@ -9,6 +9,7 @@ from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, confusion_matrix
+from sklearn.utils.class_weight import compute_class_weight
 import pandas as pd
 from datetime import datetime
 import json
@@ -58,12 +59,15 @@ class Predictor(nn.Module):
 
 class ModelTrainer:
     """Handles model training, validation, and evaluation"""
-    def __init__(self, model, device=None):
+    def __init__(self, model, device=None, class_weights=None):
         self.model = model
         self.device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model.to(self.device)
         self.train_losses = []
         self.val_losses = []
+        self.class_weights = class_weights
+        if class_weights is not None:
+            self.class_weights = torch.tensor(class_weights, dtype=torch.float32).to(self.device)
 
     def train_epoch(self, train_loader, criterion, optimizer):
         """Train for one epoch"""
@@ -75,7 +79,13 @@ class ModelTrainer:
             batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
             optimizer.zero_grad()
             outputs = self.model(batch_x)
-            loss = criterion(outputs, batch_y)
+            if self.class_weights is not None:
+                # Apply per-sample weights
+                weight = self.class_weights[batch_y.long()]
+                loss = criterion(outputs, batch_y)
+                loss = (loss * weight).mean()  # Apply weights and compute mean loss
+            else:
+                loss = criterion(outputs, batch_y)
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
@@ -93,7 +103,13 @@ class ModelTrainer:
             for batch_x, batch_y in val_loader:
                 batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
                 outputs = self.model(batch_x)
-                loss = criterion(outputs, batch_y)
+                if self.class_weights is not None:
+                    # Apply per-sample weights
+                    weight = self.class_weights[batch_y.long()]
+                    loss = criterion(outputs, batch_y)
+                    loss = (loss * weight).mean()  # Apply weights and compute mean loss
+                else:
+                    loss = criterion(outputs, batch_y)
                 total_loss += loss.item()
                 num_batches += 1
 
@@ -105,7 +121,8 @@ class ModelTrainer:
         # Regression target
         # criterion = nn.MSELoss()
         # binary classification
-        criterion = nn.BCEWithLogitsLoss()
+        # Set reduction='none' for class weights to allow per-sample weighting
+        criterion = nn.BCEWithLogitsLoss(reduction='none' if self.class_weights is not None else 'mean')
 
         if optimizer_name == 'Adam':
             optimizer = optim.Adam(self.model.parameters(), lr=lr, weight_decay=weight_decay)
@@ -119,6 +136,8 @@ class ModelTrainer:
 
         print(f"Training on {self.device}")
         print(f"Model Info: {self.model.get_model_info()}")
+        if self.class_weights is not None:
+            print(f"Using class weights: {self.class_weights.tolist()}")
 
         for epoch in range(epochs):
             train_loss = self.train_epoch(train_loader, criterion, optimizer)
@@ -135,7 +154,8 @@ class ModelTrainer:
                     'optimizer_state_dict': optimizer.state_dict(),
                     'epoch': epoch,
                     'val_loss': val_loss,
-                    'model_config': self.model.get_model_info()
+                    'model_config': self.model.get_model_info(),
+                    'class_weights': self.class_weights.tolist() if self.class_weights is not None else None
                 }, save_path)
             else:
                 patience_counter += 1
@@ -236,7 +256,7 @@ def load_dataset(file_path):
 
     X_tensor = torch.tensor(X, dtype=torch.float32)
     y_tensor = torch.tensor(y, dtype=torch.float32)
-    return X_tensor, y_tensor
+    return X_tensor, y_tensor, y
 
 def create_data_loaders(X_train, y_train, X_val, y_val, X_test, y_test, batch_size=32):
     """Create DataLoaders for training, validation, and testing"""
@@ -289,9 +309,14 @@ def main():
 
     # Load processed data from Excel
     print("\n2. LOADING PROCESSED DATA FROM EXCEL...")
-    X_train, y_train = load_dataset(train_file)
-    X_val, y_val = load_dataset(val_file)
-    X_test, y_test = load_dataset(test_file)
+    X_train, y_train, y_train_raw = load_dataset(train_file)
+    X_val, y_val, _ = load_dataset(val_file)
+    X_test, y_test, _ = load_dataset(test_file)
+
+    # Compute class weights for handling class imbalance
+    print("\nComputing class weights...")
+    class_weights = compute_class_weight('balanced', classes=np.unique(y_train_raw), y=y_train_raw)
+    print(f"Class weights: {class_weights}")
 
     input_dim = X_train.shape[1]
 
@@ -409,7 +434,7 @@ def main():
 
     print("\nFINAL TRAINING WITH BEST PARAMS...")
     model = Predictor(input_dim=input_dim, hidden_dims=[128], dropout_rate=0.7)
-    trainer = ModelTrainer(model)
+    trainer = ModelTrainer(model, class_weights=class_weights)
     train_loader, val_loader, test_loader = create_data_loaders(X_train, y_train, X_val, y_val, X_test, y_test, batch_size=64)
     training_results = trainer.train(train_loader, val_loader, epochs=50, lr=0.0005, weight_decay=1e-05, save_path='models/best_final_model.pt', optimizer_name='AdamW')
     metrics, predictions, targets = trainer.evaluate(test_loader)
