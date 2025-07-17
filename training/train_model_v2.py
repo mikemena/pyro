@@ -8,7 +8,7 @@ from data_preprocessor import DataPreprocessor
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, confusion_matrix
+from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, confusion_matrix, recall_score
 from sklearn.utils.class_weight import compute_class_weight
 import pandas as pd
 from datetime import datetime
@@ -208,6 +208,14 @@ class ModelTrainer:
 
         cm = confusion_matrix(targets, binary_preds)
 
+        # Percentage of negatives caught - True Negative Rate
+        tn, fp, fn, tp = cm.ravel() #Extract TN, FP, FN, TP
+        tnr = tn / (tn + fp)
+
+
+        # Percentage of positives caught - True Positive Rate
+        recall = recall_score(targets, binary_preds)
+
         mse = mean_squared_error(targets, predictions)
         mae = mean_absolute_error(targets, predictions)
         rmse = np.sqrt(mse)
@@ -218,17 +226,17 @@ class ModelTrainer:
             'f1_score': f1,
             'roc_auc': auc,
             'confusion_matrix': cm,
-            'mse': mse,
-            'mae': mae,
-            'rmse': rmse,
-            'r2_score': r2
+            'recall': recall,
+            'tnr': tnr
+            # 'mse': mse,
+            # 'mae': mae,
+            # 'rmse': rmse,
+            # 'r2_score': r2
         }
 
         print("Test Set Evaluation:")
-        print(f"  MSE: {mse:.4f}")
-        print(f"  MAE: {mae:.4f}")
-        print(f"  RMSE: {rmse:.4f}")
-        print(f"  R² Score: {r2:.4f}")
+        print(f"  TNR: {tnr:.2%}")
+        print(f"  Recall: {recall:.2%}")
         print(f"  Accuracy: {acc:.4f}")
         print(f"  f1 Score: {f1:.4f}")
         print(f"  roc auc: {auc:.4f}")

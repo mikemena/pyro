@@ -7,8 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from data_preprocessor import DataPreprocessor
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, confusion_matrix
+from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, confusion_matrix, recall_score
 import pandas as pd
 from datetime import datetime
 import json
@@ -188,31 +187,29 @@ class ModelTrainer:
 
         cm = confusion_matrix(targets, binary_preds)
 
-        mse = mean_squared_error(targets, predictions)
-        mae = mean_absolute_error(targets, predictions)
-        rmse = np.sqrt(mse)
-        r2 = r2_score(targets, predictions)
+        # Percentage of negatives caught - True Negative Rate
+        tn, fp, fn, tp = cm.ravel() #Extract TN, FP, FN, TP
+        tnr = tn / (tn + fp)
+
+        # Percentage of positives caught - True Positive Rate
+        recall = recall_score(targets, binary_preds)
 
         metrics = {
             'accuracy': acc,
             'f1_score': f1,
             'roc_auc': auc,
             'confusion_matrix': cm,
-            'mse': mse,
-            'mae': mae,
-            'rmse': rmse,
-            'r2_score': r2
+            'recall': recall,
+            'tnr': tnr
         }
 
         print("Test Set Evaluation:")
-        print(f"  MSE: {mse:.4f}")
-        print(f"  MAE: {mae:.4f}")
-        print(f"  RMSE: {rmse:.4f}")
-        print(f"  R² Score: {r2:.4f}")
         print(f"  Accuracy: {acc:.4f}")
         print(f"  f1 Score: {f1:.4f}")
         print(f"  roc auc: {auc:.4f}")
         print(f"  Confusion Matrix: {cm}")
+        print(f"  Recall: {recall:.2%}")
+        print(f"  TNR: {tnr:.2%}")
 
         return metrics, predictions, targets
 
@@ -437,15 +434,13 @@ def main():
             'f1_score': metrics['f1_score'],
             'roc_auc': metrics['roc_auc'],
             'confusion_matrix': metrics['confusion_matrix'].tolist(),
-            'mse': metrics['mse'],
-            'mae': metrics['mae'],
-            'rmse': float(metrics['rmse']),
-            'r2_score': metrics['r2_score']
+            'recall': metrics['recall'],
+            'tnr': metrics['tnr']
         },
         'preprocessing_artifacts': state_file,
         'best_params': {'lr': 0.0005, 'hidden_dims': [128], 'dropout': 0.7, 'weight_decay': 1e-05, 'batch_size': 64, 'optimizer': 'AdamW'}
     }
-    print(f"Results: {results}")
+    # print(f"Results: {results}")
 
     with open('models/final_results.json', 'w') as f:
         json.dump(results, f, indent=2)
