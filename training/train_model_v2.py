@@ -212,7 +212,6 @@ class ModelTrainer:
         tn, fp, fn, tp = cm.ravel() #Extract TN, FP, FN, TP
         tnr = tn / (tn + fp)
 
-
         # Percentage of positives caught - True Positive Rate
         recall = recall_score(targets, binary_preds)
 

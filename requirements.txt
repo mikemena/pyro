@@ -1,6 +1,5 @@
 torch
-torchvision
-torchaudio
+imbalanced-learn
 numpy
 pandas
 scikit-learn

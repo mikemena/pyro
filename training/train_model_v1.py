@@ -3,18 +3,27 @@ import torch.nn as nn
 import torch.optim as optim
 import sys
 import os
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from data_preprocessor import DataPreprocessor
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, confusion_matrix, recall_score
+from sklearn.metrics import (
+    accuracy_score,
+    f1_score,
+    roc_auc_score,
+    confusion_matrix,
+    recall_score,
+)
 import pandas as pd
 from datetime import datetime
 import json
 from visualize import ModelVisualizer
 
+
 class Predictor(nn.Module):
     """Simple Feedforward Neural Network for predicting classification target"""
+
     def __init__(self, input_dim, hidden_dims=[64], dropout_rate=0.0):
         super(Predictor, self).__init__()
 
@@ -28,11 +37,9 @@ class Predictor(nn.Module):
 
         # Hidden layers
         for hidden_dim in hidden_dims:
-            layers.extend([
-                nn.Linear(prev_dim, hidden_dim),
-                nn.ReLU(),
-                nn.Dropout(dropout_rate)
-            ])
+            layers.extend(
+                [nn.Linear(prev_dim, hidden_dim), nn.ReLU(), nn.Dropout(dropout_rate)]
+            )
             prev_dim = hidden_dim
 
         # Output layer (single neuron for regression)
@@ -48,18 +55,22 @@ class Predictor(nn.Module):
         trainable_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
 
         return {
-            'input_dim': self.input_dim,
-            'hidden_dims': self.hidden_dims,
-            'dropout_rate': self.dropout_rate,
-            'total_parameters': total_params,
-            'trainable_parameters': trainable_params
+            "input_dim": self.input_dim,
+            "hidden_dims": self.hidden_dims,
+            "dropout_rate": self.dropout_rate,
+            "total_parameters": total_params,
+            "trainable_parameters": trainable_params,
         }
+
 
 class ModelTrainer:
     """Handles model training, validation, and evaluation"""
+
     def __init__(self, model, device=None):
         self.model = model
-        self.device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = device or torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu"
+        )
         self.model.to(self.device)
         self.train_losses = []
         self.val_losses = []
@@ -98,22 +109,36 @@ class ModelTrainer:
 
         return total_loss / num_batches
 
-    def train(self, train_loader, val_loader, epochs=50, lr=0.001, weight_decay=0.0,
-              patience=10, min_delta=1e-4, save_path='best_model.pt', optimizer_name='Adam'):
+    def train(
+        self,
+        train_loader,
+        val_loader,
+        epochs=50,
+        lr=0.001,
+        weight_decay=0.0,
+        patience=10,
+        min_delta=1e-4,
+        save_path="best_model.pt",
+        optimizer_name="Adam",
+    ):
         """Train the model with early stopping (simplified: no scheduler, no clipping)"""
         # Regression target
         # criterion = nn.MSELoss()
         # binary classification
         criterion = nn.BCEWithLogitsLoss()
 
-        if optimizer_name == 'Adam':
-            optimizer = optim.Adam(self.model.parameters(), lr=lr, weight_decay=weight_decay)
-        elif optimizer_name == 'AdamW':
-            optimizer = optim.AdamW(self.model.parameters(), lr=lr, weight_decay=weight_decay)
+        if optimizer_name == "Adam":
+            optimizer = optim.Adam(
+                self.model.parameters(), lr=lr, weight_decay=weight_decay
+            )
+        elif optimizer_name == "AdamW":
+            optimizer = optim.AdamW(
+                self.model.parameters(), lr=lr, weight_decay=weight_decay
+            )
         else:
             raise ValueError(f"Unsupported optimizer: {optimizer_name}")
 
-        best_val_loss = float('inf')
+        best_val_loss = float("inf")
         patience_counter = 0
 
         print(f"Training on {self.device}")
@@ -129,32 +154,37 @@ class ModelTrainer:
             if val_loss < best_val_loss - min_delta:
                 best_val_loss = val_loss
                 patience_counter = 0
-                torch.save({
-                    'model_state_dict': self.model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'epoch': epoch,
-                    'val_loss': val_loss,
-                    'model_config': self.model.get_model_info()
-                }, save_path)
+                torch.save(
+                    {
+                        "model_state_dict": self.model.state_dict(),
+                        "optimizer_state_dict": optimizer.state_dict(),
+                        "epoch": epoch,
+                        "val_loss": val_loss,
+                        "model_config": self.model.get_model_info(),
+                    },
+                    save_path,
+                )
             else:
                 patience_counter += 1
 
             if (epoch + 1) % 10 == 0:
-                print(f'Epoch [{epoch+1}/{epochs}] - Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}')
+                print(
+                    f"Epoch [{epoch+1}/{epochs}] - Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}"
+                )
 
             if patience_counter >= patience:
-                print(f'Early stopping at epoch {epoch+1}')
+                print(f"Early stopping at epoch {epoch+1}")
                 break
 
         checkpoint = torch.load(save_path)
-        self.model.load_state_dict(checkpoint['model_state_dict'])
+        self.model.load_state_dict(checkpoint["model_state_dict"])
         print(f"Training completed. Best validation loss: {best_val_loss:.4f}")
 
         return {
-            'best_val_loss': best_val_loss,
-            'final_epoch': epoch + 1,
-            'train_losses': self.train_losses,
-            'val_losses': self.val_losses
+            "best_val_loss": best_val_loss,
+            "final_epoch": epoch + 1,
+            "train_losses": self.train_losses,
+            "val_losses": self.val_losses,
         }
 
     def evaluate(self, test_loader):
@@ -181,26 +211,26 @@ class ModelTrainer:
         acc = accuracy_score(targets, binary_preds)
         f1 = f1_score(targets, binary_preds)
         try:
-            auc = roc_auc_score(targets, predictions) # Use raw scores for AUC
+            auc = roc_auc_score(targets, predictions)  # Use raw scores for AUC
         except ValueError:
-            auc = None # Handle case where only one class is present in y_true
+            auc = None  # Handle case where only one class is present in y_true
 
         cm = confusion_matrix(targets, binary_preds)
 
         # Percentage of negatives caught - True Negative Rate
-        tn, fp, fn, tp = cm.ravel() #Extract TN, FP, FN, TP
+        tn, fp, fn, tp = cm.ravel()  # Extract TN, FP, FN, TP
         tnr = tn / (tn + fp)
 
         # Percentage of positives caught - True Positive Rate
         recall = recall_score(targets, binary_preds)
 
         metrics = {
-            'accuracy': acc,
-            'f1_score': f1,
-            'roc_auc': auc,
-            'confusion_matrix': cm,
-            'recall': recall,
-            'tnr': tnr
+            "accuracy": acc,
+            "f1_score": f1,
+            "roc_auc": auc,
+            "confusion_matrix": cm,
+            "recall": recall,
+            "tnr": tnr,
         }
 
         print("Test Set Evaluation:")
@@ -213,27 +243,33 @@ class ModelTrainer:
 
         return metrics, predictions, targets
 
+
 def load_dataset(file_path):
     # Load the preprocessor state
     preprocessor = DataPreprocessor()
     script_dir = os.path.dirname(os.path.abspath(__file__))
     root_dir = os.path.dirname(script_dir)
-    state_file = os.path.join(root_dir, 'preprocessing_artifacts', 'preprocessor_state.json')
+    state_file = os.path.join(
+        root_dir, "preprocessing_artifacts", "preprocessor_state.json"
+    )
     preprocessor.load_state(state_file)
 
     df = pd.read_excel(file_path)
-    X = df.drop(['Status', 'temp_index'], axis=1, errors='ignore').values
-    y = df['Status'].values
+    X = df.drop(["Status", "temp_index"], axis=1, errors="ignore").values
+    y = df["Status"].values
 
     # Encode y if binary or categorical target
-    if preprocessor.target_type in ['binary', 'categorical']:
+    if preprocessor.target_type in ["binary", "categorical"]:
         if preprocessor.target_label_encoder is None:
-            raise ValueError("Target LabelEncoder not loaded. Ensure preprocessor state is saved.")
+            raise ValueError(
+                "Target LabelEncoder not loaded. Ensure preprocessor state is saved."
+            )
         y = preprocessor.target_label_encoder.transform(y)
 
     X_tensor = torch.tensor(X, dtype=torch.float32)
     y_tensor = torch.tensor(y, dtype=torch.float32)
     return X_tensor, y_tensor
+
 
 def create_data_loaders(X_train, y_train, X_val, y_val, X_test, y_test, batch_size=32):
     """Create DataLoaders for training, validation, and testing"""
@@ -247,10 +283,11 @@ def create_data_loaders(X_train, y_train, X_val, y_val, X_test, y_test, batch_si
 
     return train_loader, val_loader, test_loader
 
+
 def main():
     # Make paths relative to the script's location
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    preprocessing_artifacts_dir = os.path.join(script_dir, '../preprocessing_artifacts')
+    preprocessing_artifacts_dir = os.path.join(script_dir, "../preprocessing_artifacts")
 
     # Debug prints to verify paths
     print("\nDebug Info:")
@@ -262,23 +299,31 @@ def main():
     else:
         print("Artifacts dir does not exist at the path above.")
 
-    state_file = os.path.join(preprocessing_artifacts_dir, 'preprocessor_state.json')
-    train_file = os.path.join(preprocessing_artifacts_dir, 'loan_default_train_processed.xlsx')
-    val_file = os.path.join(preprocessing_artifacts_dir, 'loan_default_val_processed.xlsx')
-    test_file = os.path.join(preprocessing_artifacts_dir, 'loan_default_test_processed.xlsx')
+    state_file = os.path.join(preprocessing_artifacts_dir, "preprocessor_state.json")
+    train_file = os.path.join(
+        preprocessing_artifacts_dir, "loan_default_train_resampled.xlsx"
+    )
+    val_file = os.path.join(
+        preprocessing_artifacts_dir, "loan_default_val_processed.xlsx"
+    )
+    test_file = os.path.join(
+        preprocessing_artifacts_dir, "loan_default_test_processed.xlsx"
+    )
 
     # Check each file explicitly
     files_to_check = [state_file, train_file, val_file, test_file]
     missing_files = [f for f in files_to_check if not os.path.exists(f)]
     if missing_files:
         print(f"Missing files: {missing_files}")
-        print("Run the preprocessing step (e.g., prepare.py or similar) to generate them, or adjust the paths if incorrect.")
+        print(
+            "Run the preprocessing step (e.g., prepare.py or similar) to generate them, or adjust the paths if incorrect."
+        )
         return None
 
     # Load preprocessor state to get feature names for plotting
-    with open(state_file, 'r') as f:
+    with open(state_file, "r") as f:
         preprocessor_state = json.load(f)
-    feature_names = preprocessor_state['feature_columns']
+    feature_names = preprocessor_state["feature_columns"]
 
     # Set random seeds for reproducibility
     torch.manual_seed(42)
@@ -298,7 +343,7 @@ def main():
     default_dropout = 0.0
     default_weight_decay = 0.0
     default_batch_size = 32
-    default_optimizer = 'Adam'
+    default_optimizer = "Adam"
 
     # 1. Tune Learning Rate (fix others to defaults)
 
@@ -407,46 +452,72 @@ def main():
     print("\nFINAL TRAINING WITH BEST PARAMS...")
     model = Predictor(input_dim=input_dim, hidden_dims=[128], dropout_rate=0.7)
     trainer = ModelTrainer(model)
-    train_loader, val_loader, test_loader = create_data_loaders(X_train, y_train, X_val, y_val, X_test, y_test, batch_size=64)
-    training_results = trainer.train(train_loader, val_loader, epochs=50, lr=0.0005, weight_decay=1e-05, save_path='models/best_final_model.pt', optimizer_name='AdamW')
+    train_loader, val_loader, test_loader = create_data_loaders(
+        X_train, y_train, X_val, y_val, X_test, y_test, batch_size=64
+    )
+    training_results = trainer.train(
+        train_loader,
+        val_loader,
+        epochs=50,
+        lr=0.0005,
+        weight_decay=1e-05,
+        save_path="models/best_final_model.pt",
+        optimizer_name="AdamW",
+    )
     metrics, predictions, targets = trainer.evaluate(test_loader)
 
     # Initialize visualizer
-    visualizer = ModelVisualizer(save_dir='plots')
+    visualizer = ModelVisualizer(save_dir="plots")
 
     # Generate visualizations
-    visualizer.plot_training_history(trainer.train_losses, trainer.val_losses, display=False, save=True)
+    visualizer.plot_training_history(
+        trainer.train_losses, trainer.val_losses, display=False, save=True
+    )
     visualizer.plot_confusion_matrix(targets, predictions, display=False, save=True)
-    visualizer.plot_data_distribution(X_train.numpy(), feature_names, display=False, save=True)
-    visualizer.plot_prediction_distribution(predictions, targets, display=False, save=True)
+    visualizer.plot_data_distribution(
+        X_train.numpy(), feature_names, display=False, save=True
+    )
+    visualizer.plot_prediction_distribution(
+        predictions, targets, display=False, save=True
+    )
     visualizer.plot_roc_curve(targets, predictions, display=False, save=True)
-    visualizer.plot_precision_recall_curve(targets, predictions, display=False, save=True)
+    visualizer.plot_precision_recall_curve(
+        targets, predictions, display=False, save=True
+    )
     visualizer.plot_metrics_bar(metrics, display=False, save=True)
 
     # Save final results
 
     results = {
-        'date': datetime.now().strftime('%Y-%m-%d %H:%M'),
-        'model_config': model.get_model_info(),
-        'training_results': training_results,
-        'test_metrics': {
-            'accuracy': metrics['accuracy'],
-            'f1_score': metrics['f1_score'],
-            'roc_auc': metrics['roc_auc'],
-            'confusion_matrix': metrics['confusion_matrix'].tolist(),
-            'recall': metrics['recall'],
-            'tnr': metrics['tnr']
+        "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "model_config": model.get_model_info(),
+        "training_results": training_results,
+        "test_metrics": {
+            "accuracy": metrics["accuracy"],
+            "f1_score": metrics["f1_score"],
+            "roc_auc": metrics["roc_auc"],
+            "confusion_matrix": metrics["confusion_matrix"].tolist(),
+            "recall": metrics["recall"],
+            "tnr": metrics["tnr"],
         },
-        'preprocessing_artifacts': state_file,
-        'best_params': {'lr': 0.0005, 'hidden_dims': [128], 'dropout': 0.7, 'weight_decay': 1e-05, 'batch_size': 64, 'optimizer': 'AdamW'}
+        "preprocessing_artifacts": state_file,
+        "best_params": {
+            "lr": 0.0005,
+            "hidden_dims": [128],
+            "dropout": 0.7,
+            "weight_decay": 1e-05,
+            "batch_size": 64,
+            "optimizer": "AdamW",
+        },
     }
     # print(f"Results: {results}")
 
-    with open('models/final_results.json', 'w') as f:
+    with open("models/final_results.json", "w") as f:
         json.dump(results, f, indent=2)
     print("\n🎉 FINAL TRAINING COMPLETED!")
 
     return model, trainer, results
+
 
 if __name__ == "__main__":
     result = main()
