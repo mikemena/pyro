@@ -255,8 +255,8 @@ def load_dataset(file_path):
     preprocessor.load_state(state_file)
 
     df = pd.read_excel(file_path)
-    X = df.drop(["Status", "temp_index"], axis=1, errors="ignore").values
-    y = df["Status"].values
+    X = df.drop(["personal_loan", "temp_index"], axis=1, errors="ignore").values
+    y = df["personal_loan"].values
 
     # Encode y if binary or categorical target
     if preprocessor.target_type in ["binary", "categorical"]:
@@ -301,13 +301,13 @@ def main():
 
     state_file = os.path.join(preprocessing_artifacts_dir, "preprocessor_state.json")
     train_file = os.path.join(
-        preprocessing_artifacts_dir, "loan_default_train_resampled.xlsx"
+        preprocessing_artifacts_dir, "bank_loans_train_resampled.xlsx"
     )
     val_file = os.path.join(
-        preprocessing_artifacts_dir, "loan_default_val_processed.xlsx"
+        preprocessing_artifacts_dir, "bank_loans_val_processed.xlsx"
     )
     test_file = os.path.join(
-        preprocessing_artifacts_dir, "loan_default_test_processed.xlsx"
+        preprocessing_artifacts_dir, "bank_loans_test_processed.xlsx"
     )
 
     # Check each file explicitly
