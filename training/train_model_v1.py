@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 import sys
 import os
+from logger import setup_logger
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from data_preprocessor import DataPreprocessor
@@ -19,6 +20,8 @@ import pandas as pd
 from datetime import datetime
 import json
 from visualize import ModelVisualizer
+
+logger = setup_logger(__name__, include_location=True)
 
 
 class Predictor(nn.Module):
@@ -136,13 +139,14 @@ class ModelTrainer:
                 self.model.parameters(), lr=lr, weight_decay=weight_decay
             )
         else:
+            logger.error(f"Unsupported optimizer: {optimizer_name}")
             raise ValueError(f"Unsupported optimizer: {optimizer_name}")
 
         best_val_loss = float("inf")
         patience_counter = 0
 
-        print(f"Training on {self.device}")
-        print(f"Model Info: {self.model.get_model_info()}")
+        logger.info(f"Training on {self.device}")
+        logger.info(f"Model Info: {self.model.get_model_info()}")
 
         for epoch in range(epochs):
             train_loss = self.train_epoch(train_loader, criterion, optimizer)
@@ -168,17 +172,17 @@ class ModelTrainer:
                 patience_counter += 1
 
             if (epoch + 1) % 10 == 0:
-                print(
+                logger.info(
                     f"Epoch [{epoch+1}/{epochs}] - Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}"
                 )
 
             if patience_counter >= patience:
-                print(f"Early stopping at epoch {epoch+1}")
+                logger.warning(f"Early stopping at epoch {epoch+1}")
                 break
 
         checkpoint = torch.load(save_path)
         self.model.load_state_dict(checkpoint["model_state_dict"])
-        print(f"Training completed. Best validation loss: {best_val_loss:.4f}")
+        logger.info(f"Training completed. Best validation loss: {best_val_loss:.4f}")
 
         return {
             "best_val_loss": best_val_loss,
@@ -233,13 +237,13 @@ class ModelTrainer:
             "tnr": tnr,
         }
 
-        print("Test Set Evaluation:")
-        print(f"  Accuracy: {acc:.4f}")
-        print(f"  f1 Score: {f1:.4f}")
-        print(f"  roc auc: {auc:.4f}")
-        print(f"  Confusion Matrix: {cm}")
-        print(f"  Recall: {recall:.2%}")
-        print(f"  TNR: {tnr:.2%}")
+        logger.info("Test Set Evaluation:")
+        logger.info(f"Accuracy: {acc:.4f}")
+        logger.info(f"f1 Score: {f1:.4f}")
+        logger.info(f"roc auc: {auc:.4f}")
+        logger.info(f"Confusion Matrix: {cm}")
+        logger.info(f"Recall: {recall:.2%}")
+        logger.info(f"TNR: {tnr:.2%}")
 
         return metrics, predictions, targets
 
@@ -261,6 +265,9 @@ def load_dataset(file_path):
     # Encode y if binary or categorical target
     if preprocessor.target_type in ["binary", "categorical"]:
         if preprocessor.target_label_encoder is None:
+            logger.error(
+                "Target LabelEncoder not loaded. Ensure preprocessor state is saved."
+            )
             raise ValueError(
                 "Target LabelEncoder not loaded. Ensure preprocessor state is saved."
             )
@@ -290,14 +297,15 @@ def main():
     preprocessing_artifacts_dir = os.path.join(script_dir, "../preprocessing_artifacts")
 
     # Debug prints to verify paths
-    print("\nDebug Info:")
-    print("Script directory:", script_dir)
-    print("Current working directory:", os.getcwd())
-    print("Preprocessing artifacts directory:", preprocessing_artifacts_dir)
+    logger.info("\nDebug Info:")
+    logger.info("Script directory:", script_dir)
+    logger.info("Current working directory:", os.getcwd())
+    logger.info("Preprocessing artifacts directory:", preprocessing_artifacts_dir)
+
     if os.path.exists(preprocessing_artifacts_dir):
-        print("Files in artifacts dir:", os.listdir(preprocessing_artifacts_dir))
+        logger.info("Files in artifacts dir:", os.listdir(preprocessing_artifacts_dir))
     else:
-        print("Artifacts dir does not exist at the path above.")
+        logger.info("Artifacts dir does not exist at the path above.")
 
     state_file = os.path.join(preprocessing_artifacts_dir, "preprocessor_state.json")
     train_file = os.path.join(
@@ -314,8 +322,8 @@ def main():
     files_to_check = [state_file, train_file, val_file, test_file]
     missing_files = [f for f in files_to_check if not os.path.exists(f)]
     if missing_files:
-        print(f"Missing files: {missing_files}")
-        print(
+        logger.error(f"Missing files: {missing_files}")
+        logger.error(
             "Run the preprocessing step (e.g., prepare.py or similar) to generate them, or adjust the paths if incorrect."
         )
         return None
@@ -330,7 +338,7 @@ def main():
     np.random.seed(42)
 
     # Load processed data from Excel
-    print("\n2. LOADING PROCESSED DATA FROM EXCEL...")
+    logger.info("\n2. LOADING PROCESSED DATA FROM EXCEL...")
     X_train, y_train = load_dataset(train_file)
     X_val, y_val = load_dataset(val_file)
     X_test, y_test = load_dataset(test_file)
@@ -449,7 +457,7 @@ def main():
 
     # Final training with best params (uncomment after all tuning)
 
-    print("\nFINAL TRAINING WITH BEST PARAMS...")
+    logger.info("\nFINAL TRAINING WITH BEST PARAMS...")
     model = Predictor(input_dim=input_dim, hidden_dims=[128], dropout_rate=0.7)
     trainer = ModelTrainer(model)
     train_loader, val_loader, test_loader = create_data_loaders(
@@ -514,7 +522,7 @@ def main():
 
     with open("models/final_results.json", "w") as f:
         json.dump(results, f, indent=2)
-    print("\n🎉 FINAL TRAINING COMPLETED!")
+    logger.info("\n🎉 FINAL TRAINING COMPLETED!")
 
     return model, trainer, results
 
@@ -522,6 +530,6 @@ def main():
 if __name__ == "__main__":
     result = main()
     if result:
-        print("\n✨ Pipeline completed!")
+        logger.info("\n✨ Pipeline completed!")
     else:
-        print("\n❌ Failed. Fix issues and retry.")
+        logger.info("\n❌ Failed. Fix issues and retry.")

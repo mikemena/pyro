@@ -4,6 +4,9 @@ from sklearn.model_selection import train_test_split
 import os
 from data_analyzer import analyze_dataset
 from data_preprocessor import DataPreprocessor
+from logger import setup_logger
+
+logger = setup_logger(__name__,include_location=True)
 
 
 class DataPipeline:
@@ -15,18 +18,15 @@ class DataPipeline:
     def prepare_training_data_with_splits(
         self, file_path, target_column, test_size=0.2, val_size=0.2, random_state=42
     ):
-        print("=" * 70)
-        print("SPLIT EXCEL DATA PIPELINE - MAXIMUM TRANSPARENCY")
-        print("=" * 70)
-        print(
-            f" target column parameter from prepare_training_data_with_splits, {target_column} "
-        )
-
-        print("\n1. ANALYZING DATASET STRUCTURE...")
+        logger.info("=" * 70)
+        logger.info("SPLIT EXCEL DATA PIPELINE - MAXIMUM TRANSPARENCY")
+        logger.info("=" * 70)
+        logger.info(f" target column parameter from prepare_training_data_with_splits, {target_column}")
+        logger.info("\n1. ANALYZING DATASET STRUCTURE...")
         analysis = analyze_dataset(file_path)
-        print(f"   ✓ Raw data shape: {analysis['shape']}")
+        logger.info(f"✓ Raw data shape: {analysis['shape']}")
 
-        print("\n2. LOADING RAW DATA...")
+        logger.info("\n2. LOADING RAW DATA...")
         df = pd.read_excel(file_path)
         # Reset index to ensure unique indices
         # df = df.reset_index(drop=True)
@@ -35,40 +35,36 @@ class DataPipeline:
         if target_column not in df.columns:
             raise ValueError(f"Target column '{target_column}' not found in dataset")
 
-        print("\n3. CONFIGURING PREPROCESSING...")
+        logger.info("\n3. CONFIGURING PREPROCESSING...")
         X = df.drop(target_column, axis=1)
         self.column_config = self._extract_column_config(analysis, X.columns)
 
-        print("\n4. CREATING RAW DATA SPLITS...")
+        logger.info("\n4. CREATING RAW DATA SPLITS...")
         train_df, val_df, test_df = self._split_raw_dataframe(
             df, test_size, val_size, random_state, target_column
         )
 
         # Debug: Verify split indices
-        print("Debug: Verifying split indices...")
+        logger.info("DEBUG: Verifying split indices...")
         train_indices = set(train_df.index)
         val_indices = set(val_df.index)
         test_indices = set(test_df.index)
-        print(f"   Train indices: {len(train_indices)} unique")
-        print(f"   Val indices: {len(val_indices)} unique")
-        print(f"   Test indices: {len(test_indices)} unique")
+        logger.info(f"Train indices: {len(train_indices)} unique")
+        logger.info(f"Val indices: {len(val_indices)} unique")
+        logger.info(f"Test indices: {len(test_indices)} unique")
         if train_indices & val_indices:
-            print(
-                f"   Warning: Train-Val overlap: {len(train_indices & val_indices)} indices"
-            )
-        if train_indices & test_indices:
-            print(
-                f"   Warning: Train-Test overlap: {len(train_indices & test_indices)} indices"
-            )
-        if val_indices & test_indices:
-            print(
-                f"   Warning: Val-Test overlap: {len(val_indices & test_indices)} indices"
-            )
+            logger.warning(f"Train-Val overlap: {len(train_indices & val_indices)} indices")
 
-        print("\n5. PROCESSING AND SAVING SPLITS...")
+        if train_indices & test_indices:
+            logger.warning(f"Train-Test overlap: {len(train_indices & test_indices)} indices")
+
+        if val_indices & test_indices:
+            logger.warning(f"Val-Test overlap: {len(val_indices & test_indices)} indices")
+
+        logger.info("\n5. PROCESSING AND SAVING SPLITS...")
         base_filename = os.path.splitext(os.path.basename(file_path))[0]
 
-        print("   🔄 Processing training split...")
+        logger.info("🔄 Processing training split...")
         train_excel = f"{base_filename}_train_processed.xlsx"
         X_train_processed = self.preprocessor.process_training_data(
             df=train_df,
@@ -78,21 +74,21 @@ class DataPipeline:
         )
         y_train = train_df[target_column].values
 
-        print("   🔄 Processing validation split...")
+        logger.info("🔄 Processing validation split...")
         val_excel = f"{base_filename}_val_processed.xlsx"
         X_val_processed = self._process_split_with_target(
             val_df, target_column, val_excel, fit=False
         )
         y_val = val_df[target_column].values
 
-        print("   🔄 Processing test split...")
+        logger.info("🔄 Processing test split...")
         test_excel = f"{base_filename}_test_processed.xlsx"
         X_test_processed = self._process_split_with_target(
             test_df, target_column, test_excel, fit=False
         )
         y_test = test_df[target_column].values
 
-        print("\n6. CONVERTING TO TENSORS...")
+        logger.info("\n6. CONVERTING TO TENSORS...")
         X_train = torch.FloatTensor(X_train_processed.values)
         X_val = torch.FloatTensor(X_val_processed.values)
         X_test = torch.FloatTensor(X_test_processed.values)
@@ -112,22 +108,21 @@ class DataPipeline:
             else self.preprocessor.target_label_encoder.transform(y_test)
         )
 
-        print(f"   ✓ Training tensors: {X_train.shape}")
-        print(f"   ✓ Validation tensors: {X_val.shape}")
-        print(f"   ✓ Test tensors: {X_test.shape}")
-
-        print("\n8. PIPELINE SUMMARY")
-        print("   📁 Generated Files:")
-        print(f"      📄 {train_excel}")
-        print(f"      📄 {val_excel}")
-        print(f"      📄 {test_excel}")
+        logger.info(f"✓ Training tensors: {X_train.shape}")
+        logger.info(f"✓ Validation tensors: {X_val.shape}")
+        logger.info(f"✓ Test tensors: {X_test.shape}")
+        logger.info("\n8. PIPELINE SUMMARY")
+        logger.info("📁 Generated Files:")
+        logger.info(f"📄 {train_excel}")
+        logger.info(f"📄 {val_excel}")
+        logger.info(f"📄 {test_excel}")
 
         return X_train, X_val, X_test, y_train, y_val, y_test, train_df, val_df, test_df
 
     def load_split_data_for_training(self, base_filename):
-        print("=" * 70)
-        print("LOADING PRE-SPLIT EXCEL FILES FOR TRAINING")
-        print("=" * 70)
+        logger.info("=" * 70)
+        logger.info("LOADING PRE-SPLIT EXCEL FILES FOR TRAINING")
+        logger.info("=" * 70)
 
         train_file = os.path.join(
             self.save_dir, f"{base_filename}_train_processed.xlsx"
@@ -139,21 +134,21 @@ class DataPipeline:
         missing_files = [f for f in files_to_check if not os.path.exists(f)]
 
         if missing_files:
-            print("❌ ERROR: Missing split files!")
+            logger.error("Missing split files!")
             for file in missing_files:
-                print(f"   Missing: {file}")
-            print("\nRun the split pipeline first to generate these files.")
+                logger.error(f"Missing: {file}")
+            logger.error("\nRun the split pipeline first to generate these files.")
             raise FileNotFoundError("Split Excel files not found")
 
-        print("✅ All split files found!")
+        logger.info("✅ All split files found!")
         self.preprocessor.load_state()
 
         def load_split(file_path, split_name):
-            print(f"   📄 Loading {split_name}: {os.path.basename(file_path)}")
+            logger.info(f"📄 Loading {split_name}: {os.path.basename(file_path)}")
             df = pd.read_excel(file_path)
             y = df["personal_loan"].values
             X = df.drop("personal_loan", axis=1).values
-            print(f"      Shape: {X.shape}")
+            logger.info(f"Shape: {X.shape}")
             y = (
                 y
                 if self.preprocessor.target_type == "regression"
@@ -217,7 +212,7 @@ class DataPipeline:
         full_df[target_column] = df[target_column].values
         excel_path = os.path.join(self.save_dir, excel_filename)
         full_df.to_excel(excel_path, index=False)
-        print(f"      ✅ Saved: {excel_filename} ({full_df.shape})")
+        logger.info(f"✅ Saved: {excel_filename} ({full_df.shape})")
         return X_processed
 
     def _extract_column_config(self, analysis, columns):
@@ -243,7 +238,7 @@ class DataPipeline:
                 config["numerical"].append(col)
             else:
                 config["text"].append(col)
-        print("Config:", config)
+        logger.info("Config:", config)
         return config
 
 
@@ -260,9 +255,9 @@ def load_split_training_data(base_filename="loan"):
 
 
 if __name__ == "__main__":
-    print("\n" + "=" * 70)
-    print("DEMO: SPLIT EXCEL PIPELINE")
-    print("=" * 70)
+    logger.info("\n" + "=" * 70)
+    logger.info("DEMO: SPLIT EXCEL PIPELINE")
+    logger.info("=" * 70)
     try:
         pipeline = DataPipeline()
         splits = pipeline.prepare_training_data_with_splits(
@@ -272,12 +267,12 @@ if __name__ == "__main__":
             val_size=0.2,
             random_state=42,
         )
-        print("\n" + "=" * 70)
-        print("DEMO: LOADING SPLIT FILES")
-        print("=" * 70)
+        logger.info("\n" + "=" * 70)
+        logger.info("DEMO: LOADING SPLIT FILES")
+        logger.info("=" * 70)
         X_train, X_val, X_test, y_train, y_val, y_test = (
             pipeline.load_split_data_for_training("loan")
         )
-        print("\n Split Excel pipeline complete!")
+        logger.info("\n Split Excel pipeline complete!")
     except FileNotFoundError:
-        print("The pipeline is ready to use with your data!")
+        logger.error("File not found")
