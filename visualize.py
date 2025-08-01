@@ -203,10 +203,10 @@ class ModelVisualizer:
         resampled_train = pd.read_excel(
             "preprocessing_artifacts/loan_train_resampled.xlsx"
         )
-        X_original = original_train.drop("Status", axis=1)
-        y_original = original_train["Status"]
-        X_resampled = resampled_train.drop("Status", axis=1)
-        y_resampled = resampled_train["Status"]
+        X_original = original_train.drop("personal_loan", axis=1)
+        y_original = original_train["personal_loan"]
+        X_resampled = resampled_train.drop("personal_loan", axis=1)
+        y_resampled = resampled_train["personal_loan"]
 
         pca = PCA(n_components=2)
         X_original_pca = pca.fit_transform(X_original)

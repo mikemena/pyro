@@ -203,8 +203,8 @@ class DataPipeline:
         def load_split(file_path, split_name):
             print(f"   📄 Loading {split_name}: {os.path.basename(file_path)}")
             df = pd.read_excel(file_path)
-            y = df["Status"].values
-            X = df.drop("Status", axis=1).values
+            y = df["personal_loan"].values
+            X = df.drop("personal_loan", axis=1).values
             print(f"      Shape: {X.shape}")
             y = (
                 y
@@ -300,7 +300,7 @@ class DataPipeline:
 
 
 def prepare_split_training_data(
-    file_path, target_column="Status", imbalance_threshold=0.3, **kwargs
+    file_path, target_column="personal_loan", imbalance_threshold=0.3, **kwargs
 ):
     pipeline = DataPipeline()
     return pipeline.prepare_training_data_with_splits(
@@ -320,8 +320,8 @@ if __name__ == "__main__":
     try:
         pipeline = DataPipeline()
         splits = pipeline.prepare_training_data_with_splits(
-            "data/loan_default.xlsx",
-            target_column="Status",
+            "data/bank_loans.xlsx",
+            target_column="personal_loan",
             test_size=0.2,
             val_size=0.2,
             random_state=42,

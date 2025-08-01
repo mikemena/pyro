@@ -4,30 +4,31 @@ from data_pipeline_v2 import DataPipeline
 import numpy as np
 import pandas as pd
 from hashlib import sha1
+from logger import setup_logger
+
+logger = setup_logger(__name__,include_location=True)
 
 
 def prepare_training_data():
     """Prepare and save training data with both processed and raw splits"""
-    print("Starting data preparation...")
+    logger.info("Starting data preparation...")
 
     pipeline = DataPipeline()
     X_train, X_val, X_test, y_train, y_val, y_test, train_df, val_df, test_df = (
         pipeline.prepare_training_data_with_splits(
-            "data/loan_default.xlsx",
-            target_column="Status",
+            "data/bank_loans.xlsx",
+            target_column="personal_loan",
             test_size=0.2,
             val_size=0.2,
             random_state=42,
             imbalance_threshold=0.3,
         )
     )
-    print(
-        f"With SMOTE - Training class distribution: {pd.Series(y_train.numpy()).value_counts(normalize=True)}"
-    )
-    print(f"\nData preparation complete!")
-    print(f"Training set: {X_train.shape}")
-    print(f"Validation set: {X_val.shape}")
-    print(f"Test set: {X_test.shape}")
+    logger.info(f"With SMOTE - Training class distribution: {pd.Series(y_train.numpy()).value_counts(normalize=True)}")
+    logger.info(f"\nData preparation complete!")
+    logger.info(f"Training set: {X_train.shape}")
+    logger.info(f"Validation set: {X_val.shape}")
+    logger.info(f"Test set: {X_test.shape}")
 
     torch.save(
         {
@@ -40,9 +41,8 @@ def prepare_training_data():
         },
         "processed_data.pt",
     )
-    print("✅ Processed tensors saved to 'processed_data.pt'")
-
-    print("\n🔍 Saving raw dataframes for debugging...")
+    logger.info("✅ Processed tensors saved to 'processed_data.pt'")
+    logger.info("\n🔍 Saving raw dataframes for debugging...")
     debug_dir = "debug_splits"
     os.makedirs(debug_dir, exist_ok=True)
 
@@ -54,12 +54,14 @@ def prepare_training_data():
     val_df.to_excel(os.path.join(debug_dir, "raw_val_split.xlsx"), index=False)
     test_df.to_excel(os.path.join(debug_dir, "raw_test_split.xlsx"), index=False)
 
-    print(f"✅ Raw splits saved to '{debug_dir}/' directory:")
-    print(f"   📄 raw_train_split.xlsx ({train_df.shape})")
-    print(f"   📄 raw_val_split.xlsx ({val_df.shape})")
-    print(f"   📄 raw_test_split.xlsx ({test_df.shape})")
+    logger.info(f"✅ Raw splits saved to '{debug_dir}/' directory:")
+    logger.info(f"📄 raw_train_split.xlsx ({train_df.shape})")
+    logger.info(f"📄 raw_val_split.xlsx ({val_df.shape})")
+    logger.info(f"📄 raw_test_split.xlsx ({test_df.shape})")
 
-    create_split_summary(train_df, val_df, test_df, debug_dir, target_column="Status")
+    create_split_summary(
+        train_df, val_df, test_df, debug_dir, target_column="personal_loan"
+    )
 
     return X_train, X_val, X_test, y_train, y_val, y_test
 
@@ -101,19 +103,19 @@ def create_split_summary(train_df, val_df, test_df, debug_dir, target_column):
     summary_path = os.path.join(debug_dir, "split_summary.xlsx")
     summary_df.to_excel(summary_path, index=False)
 
-    print(f"✅ Split summary saved to '{summary_path}'")
-    print("\n📊 Quick Summary:")
+    logger.info(f"✅ Split summary saved to '{summary_path}'")
+    logger.info("\n📊 Quick Summary:")
     for _, row in summary_df.iterrows():
-        print(f"   {row['Split']}: {row['Count']} samples ({row['Percentage']})")
+        logger.info(f"{row['Split']}: {row['Count']} samples ({row['Percentage']})")
         if "Target_Mean" in row:
-            print(f"      Target avg: {row['Target_Mean']}, std: {row['Target_Std']}")
+            logger.info(f"Target avg: {row['Target_Mean']}, std: {row['Target_Std']}")
         else:
-            print(f"      Target distribution: {row['Target_Distribution']}")
+            logger.info(f"Target distribution: {row['Target_Distribution']}")
 
 
-def debug_splits(target_column="Status"):
+def debug_splits(target_column="personal_loan"):
     """Function to help debug splitting issues after training"""
-    print("🔍 DEBUGGING SPLIT INTEGRITY...")
+    logger.info("🔍 DEBUGGING SPLIT INTEGRITY...")
     debug_dir = "debug_splits"
 
     try:
@@ -121,7 +123,7 @@ def debug_splits(target_column="Status"):
         val_df = pd.read_excel(os.path.join(debug_dir, "raw_val_split.xlsx"))
         test_df = pd.read_excel(os.path.join(debug_dir, "raw_test_split.xlsx"))
 
-        print("✅ Raw split files loaded successfully")
+        logger.info("✅ Raw split files loaded successfully")
 
         # Use hashes as unique identifiers to prevent data leakage detection
         def hash_rows(df):
@@ -150,23 +152,18 @@ def debug_splits(target_column="Status"):
             )
 
         if overlaps:
-            print("❌ DATA LEAKAGE DETECTED:")
+            logger.info("❌ DATA LEAKAGE DETECTED:")
             for msg in overlaps:
-                print(f"   {msg}")
+                logger.info(f"{msg}")
         else:
-            print("✅ No data leakage detected")
+            logger.info("✅ No data leakage detected")
 
-        print("\n📊 Target Distribution Check:")
+        logger.info("\n📊 Target Distribution Check:")
         if pd.api.types.is_numeric_dtype(train_df[target_column]):
-            print(
-                f"   Train {target_column} range: {train_df[target_column].min()}-{train_df[target_column].max()}"
-            )
-            print(
-                f"   Val {target_column} range: {val_df[target_column].min()}-{val_df[target_column].max()}"
-            )
-            print(
-                f"   Test {target_column} range: {test_df[target_column].min()}-{test_df[target_column].max()}"
-            )
+            logger.info(f"Train {target_column} range: {train_df[target_column].min()}-{train_df[target_column].max()}")
+            logger.info(f"Val {target_column} range: {val_df[target_column].min()}-{val_df[target_column].max()}")
+            logger.info(f"Test {target_column} range: {test_df[target_column].min()}-{test_df[target_column].max()}")
+
         else:
             for split_name, df in [
                 ("Train", train_df),
@@ -174,17 +171,14 @@ def debug_splits(target_column="Status"):
                 ("Test", test_df),
             ]:
                 value_counts = df[target_column].value_counts(normalize=True)
-                print(
-                    f"   {split_name} {target_column} distribution: {', '.join([f'{k}: {v:.2%}' for k, v in value_counts.items()])}"
-                )
+                logger.info(f"{split_name} {target_column} distribution: {', '.join([f'{k}: {v:.2%}' for k, v in value_counts.items()])}")
 
     except FileNotFoundError:
-        print("❌ Debug files not found. Run prepare_training_data() first.")
+        logger.error("❌ Debug files not found. Run prepare_training_data() first.")
     except Exception as e:
-        print(f"❌ Error during debugging: {e}")
-
+        logger.error(f"❌ Error during debugging: {e}")
 
 if __name__ == "__main__":
     prepare_training_data()
-    print("\n" + "=" * 50)
+    logger.info("\n" + "=" * 50)
     debug_splits()
