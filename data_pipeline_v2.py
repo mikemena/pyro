@@ -7,7 +7,8 @@ from data_preprocessor import DataPreprocessor
 from imblearn.over_sampling import SMOTE
 from logger import setup_logger
 
-logger = setup_logger(__name__,include_location=True)
+logger = setup_logger(__name__, include_location=True)
+
 
 class DataPipeline:
     def __init__(self, save_dir="preprocessing_artifacts"):
@@ -46,7 +47,9 @@ class DataPipeline:
         logger.info("=" * 70)
         logger.info("SPLIT EXCEL DATA PIPELINE - MAXIMUM TRANSPARENCY")
         logger.info("=" * 70)
-        logger.info(f" target column parameter from prepare_training_data_with_splits, {target_column} ")
+        logger.info(
+            f" target column parameter from prepare_training_data_with_splits, {target_column} "
+        )
         logger.info("\n1. ANALYZING DATASET STRUCTURE...")
 
         analysis = analyze_dataset(file_path)
@@ -79,11 +82,17 @@ class DataPipeline:
         logger.info(f"Val indices: {len(val_indices)} unique")
         logger.info(f"Test indices: {len(test_indices)} unique")
         if train_indices & val_indices:
-            logger.warning(f"Train-Val overlap: {len(train_indices & val_indices)} indices")
+            logger.warning(
+                f"Train-Val overlap: {len(train_indices & val_indices)} indices"
+            )
         if train_indices & test_indices:
-            logger.warning(f"Train-Test overlap: {len(train_indices & test_indices)} indices")
+            logger.warning(
+                f"Train-Test overlap: {len(train_indices & test_indices)} indices"
+            )
         if val_indices & test_indices:
-            logger.warning(f"Val-Test overlap: {len(val_indices & test_indices)} indices")
+            logger.warning(
+                f"Val-Test overlap: {len(val_indices & test_indices)} indices"
+            )
 
         logger.info("\n5. CHECKING FOR CLASS IMBALANCE...")
         is_imbalanced, distribution = self._detect_class_imbalance(
@@ -120,7 +129,9 @@ class DataPipeline:
             resampled_train_df.to_excel(
                 os.path.join(self.save_dir, resampled_excel), index=False
             )
-            logger.info(f"Saved resampled training data: {resampled_excel} ({resampled_train_df.shape})")
+            logger.info(
+                f"Saved resampled training data: {resampled_excel} ({resampled_train_df.shape})"
+            )
 
         logger.info("🔄 Processing validation split...")
         val_excel = f"{base_filename}_val_processed.xlsx"
@@ -128,8 +139,9 @@ class DataPipeline:
             val_df, target_column, val_excel, fit=False
         )
         y_val = val_df[target_column].values
+        logger.info("Processing test split...")
 
-        logger.info("🔄 Processing test split..."))
+        logger.info("🔄 Processing test split...")
         test_excel = f"{base_filename}_test_processed.xlsx"
         X_test_processed = self._process_split_with_target(
             test_df, target_column, test_excel, fit=False
@@ -298,9 +310,12 @@ def prepare_split_training_data(
         file_path, target_column, imbalance_threshold=imbalance_threshold, **kwargs
     )
 
+
 def load_split_training_data(base_filename="loan"):
+
     pipeline = DataPipeline()
     return pipeline.load_split_data_for_training(base_filename)
+
 
 if __name__ == "__main__":
     logger.info("\n" + "=" * 70)
@@ -324,4 +339,6 @@ if __name__ == "__main__":
         )
         logger.info("\n Split Excel pipeline complete!")
     except FileNotFoundError:
+        logger.error("No file found")
+        logger.error("No file found")
         logger.error("No file found")

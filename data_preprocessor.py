@@ -191,7 +191,9 @@ class DataPreprocessor:
             self.feature_columns = df.columns.tolist()
         else:
             if self.feature_columns is None:
-                logger.error(Feature columns not set. Set fit=True or load saved state.")
+                logger.error(
+                    "Feature columns not set. Set fit=True or load saved state."
+                )
                 raise ValueError(
                     "Feature columns not set. Set fit=True or load saved state."
                 )
@@ -255,7 +257,9 @@ class DataPreprocessor:
                 )
 
             if target_data_encoded.isna().any():
-                logger.error(f"Target data contains {target_data_encoded.isna().sum()} NaNs after encoding")
+                logger.error(
+                    f"Target data contains {target_data_encoded.isna().sum()} NaNs after encoding"
+                )
                 raise ValueError(
                     f"Target data contains {target_data_encoded.isna().sum()} NaNs after encoding"
                 )
@@ -346,7 +350,9 @@ class DataPreprocessor:
             features_to_process["temp_index"] = features_df["temp_index"]
 
         features_df = features_to_process
-        logger.info(f"Scaler n_samples_seen_: {self.scaler.n_samples_seen_ if self.scaler else 'N/A'}")
+        logger.info(
+            f"Scaler n_samples_seen_: {self.scaler.n_samples_seen_ if self.scaler else 'N/A'}"
+        )
 
         logger.info(f"✓ Preprocessing complete: {original_shape} → {features_df.shape}")
 
@@ -368,7 +374,9 @@ class DataPreprocessor:
         if fit:
             logger.info("💾 Saving preprocessing state...")
             self.save_state()
-            logger.info(f"✓ State saved to {os.path.join(self.save_dir, 'preprocessor_state.json')}")
+            logger.info(
+                f"✓ State saved to {os.path.join(self.save_dir, 'preprocessor_state.json')}"
+            )
 
         return features_df
 
@@ -396,7 +404,9 @@ class DataPreprocessor:
         excel_df.to_excel(excel_path, index=False)
         logger.info(f"✅ Excel saved: {excel_path}")
         logger.info(f"Shape: {excel_df.shape}")
-        logger.info(f"Columns: {len(excel_df.columns)} ({list(excel_df.columns)[:3]}...)")
+        logger.info(
+            f"Columns: {len(excel_df.columns)} ({list(excel_df.columns)[:3]}...)"
+        )
 
         return excel_path
 
@@ -422,7 +432,9 @@ class DataPreprocessor:
                 else 0
             )
         )
-        logger.info(f"Scaler n_samples_seen_ raw: {self.scaler.n_samples_seen_}, converted: {n_samples_seen}")
+        logger.info(
+            f"Scaler n_samples_seen_ raw: {self.scaler.n_samples_seen_}, converted: {n_samples_seen}"
+        )
 
         scaler_params = {
             "mean_": (
@@ -523,7 +535,9 @@ class DataPreprocessor:
         logger.info(f"Column mappings: {len(self.column_mappings)}")
         logger.info(f"Target encoding mappings: {len(self.target_encoding_mappings)}")
         logger.info(f"Target type: {self.target_type}")
-        logger.info(f"OneHotEncoder features: {len(one_hot_encoder_params.get('feature_names_in_', []))}")
+        logger.info(
+            f"OneHotEncoder features: {len(one_hot_encoder_params.get('feature_names_in_', []))}"
+        )
 
     def process_training_data(
         self, df, target_column, column_config, excel_filename=None
