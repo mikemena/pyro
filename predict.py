@@ -10,6 +10,9 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from data_preprocessor import DataPreprocessor
 from datetime import datetime
+from logger import setup_logger
+
+logger = setup_logger(__name__, include_location=True)
 
 
 class Predictor(nn.Module):
@@ -39,9 +42,9 @@ def load_dataset(file_path, preprocessor_state_path, is_preprocessed=True):
     df = pd.read_excel(file_path)
 
     if not is_preprocessed:
-        print("Adding temp_index for new dataset...")
+        logger.info("Adding temp_index for new dataset...")
         df["temp_index"] = np.arange(len(df))
-        print("Preprocessing new dataset...")
+        logger.info("Preprocessing new dataset...")
         df = preprocessor.process_inference_data(
             df, excel_filename="new_dataset_processed.xlsx"
         )
@@ -90,7 +93,7 @@ def main():
     # Check for required files
     for file_path in [state_file, model_file, dataset_file]:
         if not os.path.exists(file_path):
-            print(f"Error: {file_path} not found")
+            logger.error(f"{file_path} not found")
             return
 
     # Determine the original dataset path
@@ -108,7 +111,7 @@ def main():
         df_original["temp_index"] = np.arange(len(df_original))
 
     # Load preprocessor state and dataset
-    print("LOADING DATASET AND PREPROCESSOR STATE...")
+    logger.info("LOADING DATASET AND PREPROCESSOR STATE...")
     X, feature_names, input_df = load_dataset(
         dataset_file, state_file, is_preprocessed=is_preprocessed
     )
@@ -125,7 +128,7 @@ def main():
     model.load_state_dict(checkpoint["model_state_dict"])
 
     # Make predictions
-    print("MAKING PREDICTIONS...")
+    logger.info("MAKING PREDICTIONS...")
     predictions = make_predictions(model, data_loader, device)
     binary_predictions = (predictions >= 0.5).astype(
         int
@@ -146,12 +149,12 @@ def main():
 
     # Optional: Check for row mismatch
     if len(df_original) != len(input_df):
-        print("Warning: Row count mismatch between original and processed data.")
+        logger.warning("Row count mismatch between original and processed data.")
 
     output_file = os.path.join(script_dir, "predictions/predictions.xlsx")
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
     output_df.to_excel(output_file, index=False)
-    print(f"Predictions saved to {output_file}")
+    logger.info(f"Predictions saved to {output_file}")
 
     # Save results summary
     results = {
@@ -169,9 +172,9 @@ def main():
         os.path.join(script_dir, "predictions/prediction_results.json"), "w"
     ) as f:
         json.dump(results, f, indent=2)
-    print("Prediction results saved.")
+    logger.info("Prediction results saved.")
 
 
 if __name__ == "__main__":
     main()
-    print("Prediction pipeline completed!")
+    logger.info("Prediction pipeline completed!")

@@ -5,6 +5,9 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.preprocessing import OneHotEncoder
 import json
 import os
+from logger import setup_logger
+
+logger = setup_logger(__name__, include_location=True)
 
 
 class DataPreprocessor:
@@ -48,7 +51,7 @@ class DataPreprocessor:
         if not categorical_to_encode:
             return df
 
-        print(
+        logger.info(
             f"Processing {len(categorical_to_encode)} categorical/binary columns with OneHotEncoder..."
         )
 
@@ -99,7 +102,9 @@ class DataPreprocessor:
 
     def target_encode(self, df, feature_column, target_data=None, alpha=0.1, fit=True):
         """Transform a high-cardinality categorical feature into a numerical feature"""
-        print(f"Debugging target_encode for feature: {feature_column} (fit={fit})")
+        logger.info(
+            f"Debugging target_encode for feature: {feature_column} (fit={fit})"
+        )
         df = df.copy()
 
         if fit:
@@ -112,7 +117,7 @@ class DataPreprocessor:
                     f"Target data contains {target_data.isna().sum()} NaNs"
                 )
             global_mean = target_data.mean()
-            print(f"Global mean: {global_mean}")
+            logger.info(f"Global mean: {global_mean}")
             temp_df = pd.DataFrame(
                 {"feature": df[feature_column].astype(str), "target": target_data}
             )
@@ -121,7 +126,7 @@ class DataPreprocessor:
                 .apply(lambda x: (x.sum() + alpha * global_mean) / (x.count() + alpha))
                 .to_dict()
             )
-            # print(f"Target encoding mapping: {mapping}")
+            # logger.info(f"Target encoding mapping: {mapping}")
             self.target_encoding_mappings[feature_column] = {
                 "mapping": mapping,
                 "global_mean": float(global_mean),
@@ -133,9 +138,12 @@ class DataPreprocessor:
                 global_mean
             )
             if df[f"{feature_column}_encoded"].isna().any():
-                print(f"Warning: NaNs detected in {feature_column}_encoded")
+                logger.warning(f"NaNs detected in {feature_column}_encoded")
         else:
             if feature_column not in self.target_encoding_mappings:
+                logger.error(
+                    f"No target encoding mapping found for {feature_column}. Run fit=True first."
+                )
                 raise ValueError(
                     f"No target encoding mapping found for {feature_column}. Run fit=True first."
                 )
@@ -170,6 +178,7 @@ class DataPreprocessor:
             scaled_data = self.scaler.fit_transform(df)
         else:
             if self.scaler is None:
+                logger.error("Scaler not fitted. Set fit=True or load saved scaler.")
                 raise ValueError(
                     "Scaler not fitted. Set fit=True or load saved scaler."
                 )
@@ -182,6 +191,7 @@ class DataPreprocessor:
             self.feature_columns = df.columns.tolist()
         else:
             if self.feature_columns is None:
+                logger.error(Feature columns not set. Set fit=True or load saved state.")
                 raise ValueError(
                     "Feature columns not set. Set fit=True or load saved state."
                 )
@@ -204,22 +214,22 @@ class DataPreprocessor:
         fit=True,
     ):
 
-        print(f"🔄 Starting preprocessing pipeline (fit={fit})...")
+        logger.info(f"🔄 Starting preprocessing pipeline (fit={fit})...")
 
         # Separate target if provided
         if target_column and target_column in df.columns:
             target_data = df[target_column].copy()
-            print(f"Target data dtype: {target_data.dtype}")
+            logger.info(f"Target data dtype: {target_data.dtype}")
             unique_targets = target_data.unique()
             unique_count = len(unique_targets)
             total_rows = len(target_data)
-            print(f"Unique target values: {unique_targets}")
+            logger.info(f"Unique target values: {unique_targets}")
 
             # Determine target type
             self.target_type = self.determine_target_type(
                 target_data, unique_count, total_rows
             )
-            print(f"Detected target type: {self.target_type}")
+            logger.info(f"Detected target type: {self.target_type}")
 
             # Encode categorical targets
             if self.target_type in ["binary", "categorical"] and fit:
@@ -228,9 +238,10 @@ class DataPreprocessor:
                     self.target_label_encoder.fit_transform(target_data),
                     index=target_data.index,
                 )
-                print(f"Encoded target values: {target_data_encoded.unique()}")
+                logger.info(f"Encoded target values: {target_data_encoded.unique()}")
             elif self.target_type in ["binary", "categorical"] and not fit:
                 if self.target_label_encoder is None:
+                    logger.error("Target label encoder not fitted. Run fit=True first.")
                     raise ValueError(
                         "Target label encoder not fitted. Run fit=True first."
                     )
@@ -244,12 +255,13 @@ class DataPreprocessor:
                 )
 
             if target_data_encoded.isna().any():
+                logger.error(f"Target data contains {target_data_encoded.isna().sum()} NaNs after encoding")
                 raise ValueError(
                     f"Target data contains {target_data_encoded.isna().sum()} NaNs after encoding"
                 )
 
             features_df = df.drop(target_column, axis=1).copy()
-            print(f"   ✓ Separated target column '{target_column}'")
+            logger.info(f"✓ Separated target column '{target_column}'")
         else:
             target_data = None
             target_data_encoded = None
@@ -264,7 +276,7 @@ class DataPreprocessor:
 
         # Step 1: Handle missing values
         if numerical_columns or low_cardinality_categorical_columns:
-            print("Handling missing values...")
+            logger.info("Handling missing values...")
             all_categorical = (low_cardinality_categorical_columns or []) + (
                 binary_columns or []
             )
@@ -274,33 +286,32 @@ class DataPreprocessor:
 
         # Step 2: Process datetime columns
         if datetime_columns:
-            print(f"Processing {len(datetime_columns)} datetime columns...")
+            logger.info(f"Processing {len(datetime_columns)} datetime columns...")
             features_df = self.preprocess_datetime(features_df, datetime_columns)
 
         # Step 3: Process low-cardinality categorical and binary features
         if low_cardinality_categorical_columns or binary_columns:
-            print(f"Processing low cardinality categorical/binary columns...")
+            logger.info(f"Processing low cardinality categorical/binary columns...")
             features_df = self.preprocess_categorical(
                 features_df, low_cardinality_categorical_columns or [], binary_columns
             )
 
         # Step 4: Process high-cardinality categorical feature
         if high_cardinality_categorical_columns:
-            print(f"Processing high cardinality categorical columns...")
+            logger.info(f"Processing high cardinality categorical columns...")
             for col in high_cardinality_categorical_columns:
                 if col in features_df.columns:
-                    # print(f"Before target encoding for {col}:")
-                    # print(features_df.head())
+                    # logger.info(f"Before target encoding for {col}:")
+                    # logger.info(features_df.head())
                     features_df = self.target_encode(
                         features_df,
                         col,
                         target_data=target_data_encoded if fit else None,
                         fit=fit,
                     )
-                    # print(f"After target encoding for {col}:")
-                    # print(features_df.head())
+                    # logger.info(f"After target encoding for {col}:")
                     if features_df[f"{col}_encoded"].isna().any():
-                        print(f"Warning: NaNs detected in {col}_encoded")
+                        logger.warning(f"NaNs detected in {col}_encoded")
                         features_df.to_excel(
                             os.path.join(
                                 self.save_dir, f"after_target_encode_{col}.xlsx"
@@ -309,42 +320,40 @@ class DataPreprocessor:
                         )
 
         # Debug: Check for NaNs or invalid values before scaling
-        print("Debug: Checking data before scaling...")
+        logger.info("Debug: Checking data before scaling...")
         nan_columns = features_df.columns[features_df.isna().any()].tolist()
         inf_columns = features_df.columns[
             features_df.isin([np.inf, -np.inf]).any()
         ].tolist()
-        print(f"NaN columns: {nan_columns}")
-        print(f"Infinity columns: {inf_columns}")
+        logger.info(f"NaN columns: {nan_columns}")
+        logger.info(f"Infinity columns: {inf_columns}")
         if nan_columns or inf_columns:
             features_df.to_excel(
                 os.path.join(self.save_dir, "before_scaling_debug.xlsx"), index=False
             )
-            print("Saved pre-scaling DataFrame to before_scaling_debug.xlsx")
+            logger.info("Saved pre-scaling DataFrame to before_scaling_debug.xlsx")
 
         # Step 5: Align features and scale, excluding temp_index if present
-        print("   🔄 Aligning features...")
+        logger.info("🔄 Aligning features...")
         columns_to_process = [col for col in features_df.columns if col != "temp_index"]
         features_to_process = features_df[columns_to_process]
         features_to_process = self.align_features(features_to_process, fit=fit)
 
-        print("   📊 Scaling features...")
+        logger.info("📊 Scaling features...")
         features_to_process = self.scale_features(features_to_process, fit=fit)
 
         if not fit:
             features_to_process["temp_index"] = features_df["temp_index"]
 
         features_df = features_to_process
-        print(
-            f"Scaler n_samples_seen_: {self.scaler.n_samples_seen_ if self.scaler else 'N/A'}"
-        )
+        logger.info(f"Scaler n_samples_seen_: {self.scaler.n_samples_seen_ if self.scaler else 'N/A'}")
 
-        print(f"   ✓ Preprocessing complete: {original_shape} → {features_df.shape}")
+        logger.info(f"✓ Preprocessing complete: {original_shape} → {features_df.shape}")
 
         # Debug: Check for NaNs after scaling
         if features_df.isna().any().any():
-            print("Warning: NaNs detected after scaling")
-            print(features_df.isna().sum())
+            logger.warning("NaNs detected after scaling")
+            logger.info(features_df.isna().sum())
             features_df.to_excel(
                 os.path.join(self.save_dir, "after_scaling_debug.xlsx"), index=False
             )
@@ -357,11 +366,9 @@ class DataPreprocessor:
 
         # Step 8: Save preprocessing state if fitting
         if fit:
-            print("   💾 Saving preprocessing state...")
+            logger.info("💾 Saving preprocessing state...")
             self.save_state()
-            print(
-                f"   ✓ State saved to {os.path.join(self.save_dir, 'preprocessor_state.json')}"
-            )
+            logger.info(f"✓ State saved to {os.path.join(self.save_dir, 'preprocessor_state.json')}")
 
         return features_df
 
@@ -381,28 +388,27 @@ class DataPreprocessor:
             excel_df[target_column] = (
                 target_data.values
             )  # Use original target_data (not encoded)
-            print(f"   📄 Saving processed data with target to Excel...")
+            logger.info(f"📄 Saving processed data with target to Excel...")
         else:
             excel_df = features_df.copy()
-            print(f"   📄 Saving processed features to Excel...")
+            logger.info(f"📄 Saving processed features to Excel...")
 
         excel_df.to_excel(excel_path, index=False)
-        print(f"   ✅ Excel saved: {excel_path}")
-        print(f"      Shape: {excel_df.shape}")
-        print(
-            f"      Columns: {len(excel_df.columns)} ({list(excel_df.columns)[:3]}...)"
-        )
+        logger.info(f"✅ Excel saved: {excel_path}")
+        logger.info(f"Shape: {excel_df.shape}")
+        logger.info(f"Columns: {len(excel_df.columns)} ({list(excel_df.columns)[:3]}...)")
 
         return excel_path
 
     def enable_excel_output(self, enabled=True):
         """Enable or disable Excel output"""
         self.excel_output_enabled = enabled
-        print(f"Excel output {'enabled' if enabled else 'disabled'}")
+        logger.info(f"Excel output {'enabled' if enabled else 'disabled'}")
 
     def save_state(self):
         """Save preprocessing state as JSON"""
         if self.scaler is None:
+            logger.error("Scaler not fitted. Cannot save state.")
             raise ValueError("Scaler not fitted. Cannot save state.")
 
         # Extract StandardScaler parameters
@@ -416,9 +422,8 @@ class DataPreprocessor:
                 else 0
             )
         )
-        print(
-            f"Scaler n_samples_seen_ raw: {self.scaler.n_samples_seen_}, converted: {n_samples_seen}"
-        )
+        logger.info(f"Scaler n_samples_seen_ raw: {self.scaler.n_samples_seen_}, converted: {n_samples_seen}")
+
         scaler_params = {
             "mean_": (
                 self.scaler.mean_.tolist() if self.scaler.mean_ is not None else []
@@ -471,9 +476,10 @@ class DataPreprocessor:
             state_file = os.path.join(script_dir, "preprocessing_artifacts")
 
         if not os.path.exists(state_file):
+            logger.error(f"No saved state found at {state_file}")
             raise FileNotFoundError(f"No saved state found at {state_file}")
 
-        print(f"state_file: {state_file}")
+        logger.info(f"state_file: {state_file}")
         with open(state_file, "r") as f:
             state = json.load(f)
 
@@ -512,20 +518,18 @@ class DataPreprocessor:
             # Set drop_idx_ to None to avoid issues with partial state
             self.one_hot_encoder.drop_idx_ = None
 
-        print(f"✅ Loaded preprocessing state from {state_file}")
-        print(f"   Features: {len(self.feature_columns)}")
-        print(f"   Column mappings: {len(self.column_mappings)}")
-        print(f"   Target encoding mappings: {len(self.target_encoding_mappings)}")
-        print(f"   Target type: {self.target_type}")
-        print(
-            f"   OneHotEncoder features: {len(one_hot_encoder_params.get('feature_names_in_', []))}"
-        )
+        logger.info(f"✅ Loaded preprocessing state from {state_file}")
+        logger.info(f"Features: {len(self.feature_columns)}")
+        logger.info(f"Column mappings: {len(self.column_mappings)}")
+        logger.info(f"Target encoding mappings: {len(self.target_encoding_mappings)}")
+        logger.info(f"Target type: {self.target_type}")
+        logger.info(f"OneHotEncoder features: {len(one_hot_encoder_params.get('feature_names_in_', []))}")
 
     def process_training_data(
         self, df, target_column, column_config, excel_filename=None
     ):
         """Convenience method for processing training data"""
-        print("🎯 Processing training data...")
+        logger.info("🎯 Processing training data...")
         return self.process_and_save(
             df=df,
             target_column=target_column,
@@ -544,7 +548,7 @@ class DataPreprocessor:
 
     def process_inference_data(self, df, excel_filename=None):
         """Convenience method for processing inference data"""
-        print("Processing inference data...")
+        logger.info("Processing inference data...")
         self.load_state()
         return self.process_and_save(
             df=df,

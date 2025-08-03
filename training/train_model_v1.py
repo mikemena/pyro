@@ -3,9 +3,10 @@ import torch.nn as nn
 import torch.optim as optim
 import sys
 import os
-from logger import setup_logger
+
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from logger import setup_logger
 from data_preprocessor import DataPreprocessor
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np

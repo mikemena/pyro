@@ -6,7 +6,7 @@ from data_analyzer import analyze_dataset
 from data_preprocessor import DataPreprocessor
 from logger import setup_logger
 
-logger = setup_logger(__name__,include_location=True)
+logger = setup_logger(__name__, include_location=True)
 
 
 class DataPipeline:
@@ -21,7 +21,9 @@ class DataPipeline:
         logger.info("=" * 70)
         logger.info("SPLIT EXCEL DATA PIPELINE - MAXIMUM TRANSPARENCY")
         logger.info("=" * 70)
-        logger.info(f" target column parameter from prepare_training_data_with_splits, {target_column}")
+        logger.info(
+            f" target column parameter from prepare_training_data_with_splits, {target_column}"
+        )
         logger.info("\n1. ANALYZING DATASET STRUCTURE...")
         analysis = analyze_dataset(file_path)
         logger.info(f"✓ Raw data shape: {analysis['shape']}")
@@ -30,7 +32,7 @@ class DataPipeline:
         df = pd.read_excel(file_path)
         # Reset index to ensure unique indices
         # df = df.reset_index(drop=True)
-        # print(f"   ✓ Loaded: {df.shape}")
+        # logger.info(f"✓ Loaded: {df.shape}")
 
         if target_column not in df.columns:
             raise ValueError(f"Target column '{target_column}' not found in dataset")
@@ -53,13 +55,19 @@ class DataPipeline:
         logger.info(f"Val indices: {len(val_indices)} unique")
         logger.info(f"Test indices: {len(test_indices)} unique")
         if train_indices & val_indices:
-            logger.warning(f"Train-Val overlap: {len(train_indices & val_indices)} indices")
+            logger.warning(
+                f"Train-Val overlap: {len(train_indices & val_indices)} indices"
+            )
 
         if train_indices & test_indices:
-            logger.warning(f"Train-Test overlap: {len(train_indices & test_indices)} indices")
+            logger.warning(
+                f"Train-Test overlap: {len(train_indices & test_indices)} indices"
+            )
 
         if val_indices & test_indices:
-            logger.warning(f"Val-Test overlap: {len(val_indices & test_indices)} indices")
+            logger.warning(
+                f"Val-Test overlap: {len(val_indices & test_indices)} indices"
+            )
 
         logger.info("\n5. PROCESSING AND SAVING SPLITS...")
         base_filename = os.path.splitext(os.path.basename(file_path))[0]

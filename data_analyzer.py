@@ -1,24 +1,19 @@
 import pandas as pd
+from logger import setup_logger
+
+logger = setup_logger(__name__, include_location=True)
 
 
 def analyze_dataset(file_path, sheet_name=None):
-    """
-    Analyze dataset structure and provide preprocessing recommendations
-    Args:
-        file_path: Path to the Excel file
-        sheet_name: Specific sheet to analyze (optional)
-    Returns:
-        dict: Analysis results with column types and recommendations
-    """
     # Load data
     if sheet_name is None:
         df = pd.read_excel(file_path, sheet_name=0)  # First sheet
     else:
         df = pd.read_excel(file_path, sheet_name=sheet_name)
 
-    print("Dataset Overview")
-    print(f"Shape: {df.shape}")
-    print(f"Missing values: {df.isnull().sum().sum()}")
+    logger.info("Dataset Overview")
+    logger.info(f"Shape: {df.shape}")
+    logger.info(f"Missing values: {df.isnull().sum().sum()}")
 
     analysis_results = {"shape": df.shape, "columns": {}, "recommendations": []}
 
@@ -26,16 +21,18 @@ def analyze_dataset(file_path, sheet_name=None):
     for col in df.columns:
         col_analysis = analyze_column(df[col], col)
         analysis_results["columns"][col] = col_analysis
-        print(f"{col}")
-        print(f"  Type: {col_analysis['recommended_type']}")
-        print(f"  Unique values: {col_analysis['unique_count']}")
-        print(f"  Missing: {col_analysis['missing_count']}")
+        logger.info(f"{col}")
+        logger.info(f"Type: {col_analysis['recommended_type']}")
+        logger.info(f"Unique values: {col_analysis['unique_count']}")
+        logger.info(f"Missing: {col_analysis['missing_count']}")
         if col_analysis["sample_values"]:
-            print(f"  Sample: {col_analysis['sample_values']}")
+            logger.info(f"Sample: {col_analysis['sample_values']}")
 
         # Display recommendations for this column
         if col_analysis["recommendations"]:
-            print(f"  Recommendations: {'; '.join(col_analysis['recommendations'])}")
+            logger.info(
+                f"Recommendations: {'; '.join(col_analysis['recommendations'])}"
+            )
 
         # Add column recommendations to overall recommendations
         analysis_results["recommendations"].extend(
@@ -45,9 +42,9 @@ def analyze_dataset(file_path, sheet_name=None):
 
     # Display overall recommendations
     if analysis_results["recommendations"]:
-        print("=== PREPROCESSING RECOMMENDATIONS ===")
+        logger.info("=== PREPROCESSING RECOMMENDATIONS ===")
         for i, rec in enumerate(analysis_results["recommendations"], 1):
-            print(f"{i}. {rec}")
+            logger.info(f"{i}. {rec}")
         print()
 
     return analysis_results
@@ -90,11 +87,7 @@ def get_column_statistics(series):
     # Sample values (first 5, converted to string)
     sample_values = [str(val) for val in unique_values[:5]]
 
-    # Determine data types
-    #  # Determine column type
     column_type = determine_column_type(series, unique_count, total_count)
-    # is_numeric = pd.api.types.is_numeric_dtype(series)
-    # is_datetime = pd.api.types.is_datetime64_any_dtype(series)
 
     return {
         "unique_count": unique_count,
@@ -102,8 +95,6 @@ def get_column_statistics(series):
         "missing_percentage": missing_percentage,
         "sample_values": sample_values,
         "column_type": column_type,
-        #'is_numeric': is_numeric,
-        #'is_datetime': is_datetime,
         "total_count": total_count,
     }
 
