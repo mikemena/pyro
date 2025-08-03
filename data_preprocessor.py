@@ -295,14 +295,14 @@ class DataPreprocessor:
 
         # Step 3: Process low-cardinality categorical and binary features
         if low_cardinality_categorical_columns or binary_columns:
-            logger.info(f"Processing low cardinality categorical/binary columns...")
+            logger.info("Processing low cardinality categorical/binary columns...")
             features_df = self.preprocess_categorical(
                 features_df, low_cardinality_categorical_columns or [], binary_columns
             )
 
         # Step 4: Process high-cardinality categorical feature
         if high_cardinality_categorical_columns:
-            logger.info(f"Processing high cardinality categorical columns...")
+            logger.info("Processing high cardinality categorical columns...")
             for col in high_cardinality_categorical_columns:
                 if col in features_df.columns:
                     # logger.info(f"Before target encoding for {col}:")
@@ -396,10 +396,10 @@ class DataPreprocessor:
             excel_df[target_column] = (
                 target_data.values
             )  # Use original target_data (not encoded)
-            logger.info(f"📄 Saving processed data with target to Excel...")
+            logger.info("📄 Saving processed data with target to Excel...")
         else:
             excel_df = features_df.copy()
-            logger.info(f"📄 Saving processed features to Excel...")
+            logger.info("📄 Saving processed features to Excel...")
 
         excel_df.to_excel(excel_path, index=False)
         logger.info(f"✅ Excel saved: {excel_path}")
