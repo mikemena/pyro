@@ -258,11 +258,6 @@ class ModelTrainer:
         # Percentage of positives caught - True Positive Rate
         recall = recall_score(targets, binary_preds)
 
-        mse = mean_squared_error(targets, predictions)
-        mae = mean_absolute_error(targets, predictions)
-        rmse = np.sqrt(mse)
-        r2 = r2_score(targets, predictions)
-
         metrics = {
             "accuracy": acc,
             "f1_score": f1,
@@ -270,10 +265,6 @@ class ModelTrainer:
             "confusion_matrix": cm,
             "recall": recall,
             "tnr": tnr,
-            # 'mse': mse,
-            # 'mae': mae,
-            # 'rmse': rmse,
-            # 'r2_score': r2
         }
 
         logger.info("Test Set Evaluation:")
@@ -283,7 +274,6 @@ class ModelTrainer:
         logger.info(f"f1 Score: {f1:.4f}")
         logger.info(f"roc auc: {auc:.4f}")
         logger.info(f"Confusion Matrix: {cm}")
-        logger.info()
 
         return metrics, predictions, targets
 
@@ -341,6 +331,7 @@ def main():
     logger.info("Script directory:", script_dir)
     logger.info("Current working directory:", os.getcwd())
     logger.info("Preprocessing artifacts directory:", preprocessing_artifacts_dir)
+
     if os.path.exists(preprocessing_artifacts_dir):
         logger.info("Files in artifacts dir:", os.listdir(preprocessing_artifacts_dir))
     else:
@@ -551,10 +542,8 @@ def main():
             "f1_score": metrics["f1_score"],
             "roc_auc": metrics["roc_auc"],
             "confusion_matrix": metrics["confusion_matrix"].tolist(),
-            "mse": metrics["mse"],
-            "mae": metrics["mae"],
-            "rmse": float(metrics["rmse"]),
-            "r2_score": metrics["r2_score"],
+            "recall": metrics["recall"],
+            "tnr": metrics["tnr"],
         },
         "preprocessing_artifacts": state_file,
         "best_params": {
