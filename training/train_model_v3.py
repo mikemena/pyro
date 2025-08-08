@@ -7,16 +7,9 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from logger import setup_logger
 from data_preprocessor import DataPreprocessor
+from evaluate import ModelEvaluator
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.metrics import (
-    accuracy_score,
-    f1_score,
-    roc_auc_score,
-    confusion_matrix,
-    recall_score,
-)
 from sklearn.utils.class_weight import compute_class_weight
 import pandas as pd
 from datetime import datetime
@@ -30,6 +23,9 @@ class Predictor(nn.Module):
 
     def __init__(self, input_dim, hidden_dims=[128, 64], dropout_rate=0.3, use_batch_norm=True, activation='relu'):
         super().__init__()
+        self.input_dim = input_dim
+        self.hidden_dims = hidden_dims
+        self.dropout_rate = dropout_rate
 
         self.use_batch_norm = use_batch_norm
         layers = []
@@ -72,7 +68,6 @@ class Predictor(nn.Module):
 
 
 class ModelTrainer:
-    """Handles model training, validation, and evaluation"""
 
     def __init__(self, model, device=None, class_weights=None):
         self.model = model
@@ -87,6 +82,8 @@ class ModelTrainer:
             self.class_weights = torch.tensor(class_weights, dtype=torch.float32).to(
                 self.device
             )
+        self.scheduler = None
+        self.best_model_state = None
 
     def train_epoch(self, train_loader, criterion, optimizer):
         """Train for one epoch"""
@@ -138,22 +135,17 @@ class ModelTrainer:
         self,
         train_loader,
         val_loader,
-        epochs=50,
+        epochs=100,
         lr=0.001,
-        weight_decay=0.0,
-        patience=10,
-        min_delta=1e-4,
+        use_scheduler=True,
+        scheduler_type='cosine',
+        weight_decay=0.0, # L2 regularization to prevent overfitting
+        patience=10, # stop if validation loss plateaus
+        min_delta=1e-4, # define what counts as 'improvements'
         save_path="best_model.pt",
         optimizer_name="Adam",
     ):
-        """Train the model with early stopping (simplified: no scheduler, no clipping)"""
-        # Regression target
-        # criterion = nn.MSELoss()
-        # binary classification
-        # Set reduction='none' for class weights to allow per-sample weighting
-        criterion = nn.BCEWithLogitsLoss(
-            reduction="none" if self.class_weights is not None else "mean"
-        )
+        # Optimizer
 
         if optimizer_name == "Adam":
             optimizer = optim.Adam(
@@ -166,6 +158,35 @@ class ModelTrainer:
         else:
             logger.error(f"Unsupported optimizer: {optimizer_name}")
             raise ValueError(f"Unsupported optimizer: {optimizer_name}")
+
+        # Learning rate scheduler
+
+        if use_scheduler:
+            if scheduler_type == 'cosine':
+                self.scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=lr*0.01)
+            if scheduler_type == 'step':
+                self.scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.5)
+            if scheduler_type == 'plateau':
+                self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=5, factor=0.5)
+
+        criterion = nn.BCEWithLogitsLoss(
+            reduction="none" if self.class_weights is not None else "mean"
+        )
+        # Add gradient clippng
+
+        for epoch in range(epochs):
+            train_loss = self.train_epoch(train_loader, criterion, optimizer)
+
+            # Gradient clipping
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+
+            val_loss = self.validate(val_loader, criterion)
+
+            if self.scheduler:
+                if scheduler_type == 'plateau':
+                    self.scheduler.step(val_loss)
+                else:
+                    self.scheduler.step()
 
         best_val_loss = float("inf")
         patience_counter = 0
@@ -224,63 +245,6 @@ class ModelTrainer:
             "val_losses": self.val_losses,
         }
 
-    def evaluate(self, test_loader):
-        """Evaluate model on test set"""
-        self.model.eval()
-        predictions = []
-        targets = []
-
-        with torch.no_grad():
-            for batch_x, batch_y in test_loader:
-                batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
-                logits = self.model(batch_x)
-                probabilities = torch.sigmoid(logits)
-                predictions.extend(probabilities.cpu().numpy())
-                targets.extend(batch_y.cpu().numpy())
-
-        predictions = np.array(predictions).flatten()
-        targets = np.array(targets).flatten()
-
-        # Apply threshold to get binary predictions
-        binary_preds = (predictions >= 0.5).astype(int)
-
-        # Classification metrics
-        acc = accuracy_score(targets, binary_preds)
-        f1 = f1_score(targets, binary_preds)
-        try:
-            auc = roc_auc_score(targets, predictions)  # Use raw scores for AUC
-        except ValueError:
-            auc = None  # Handle case where only one class is present in y_true
-
-        cm = confusion_matrix(targets, binary_preds)
-
-        # Percentage of negatives caught - True Negative Rate
-        tn, fp, fn, tp = cm.ravel()  # Extract TN, FP, FN, TP
-        tnr = tn / (tn + fp)
-
-        # Percentage of positives caught - True Positive Rate
-        recall = recall_score(targets, binary_preds)
-
-        metrics = {
-            "accuracy": acc,
-            "f1_score": f1,
-            "roc_auc": auc,
-            "confusion_matrix": cm,
-            "recall": recall,
-            "tnr": tnr,
-        }
-
-        logger.info("Test Set Evaluation:")
-        logger.info(f"TNR: {tnr:.2%}")
-        logger.info(f"Recall: {recall:.2%}")
-        logger.info(f"Accuracy: {acc:.4f}")
-        logger.info(f"f1 Score: {f1:.4f}")
-        logger.info(f"roc auc: {auc:.4f}")
-        logger.info(f"Confusion Matrix: {cm}")
-
-        return metrics, predictions, targets
-
-
 def load_dataset(file_path):
     # Load the preprocessor state
     preprocessor = DataPreprocessor()
@@ -331,12 +295,12 @@ def main():
 
     # Debug prints to verify paths
     logger.info("\nDebug Info:")
-    logger.info("Script directory:", script_dir)
-    logger.info("Current working directory:", os.getcwd())
-    logger.info("Preprocessing artifacts directory:", preprocessing_artifacts_dir)
+    logger.info(f"Script directory: {script_dir}")
+    logger.info(f"Current working directory: {os.getcwd()}")
+    logger.info(f"Preprocessing artifacts directory: {preprocessing_artifacts_dir}")
 
     if os.path.exists(preprocessing_artifacts_dir):
-        logger.info("Files in artifacts dir:", os.listdir(preprocessing_artifacts_dir))
+        logger.info(f"Files in artifacts dir: {os.listdir(preprocessing_artifacts_dir)}")
     else:
         logger.error("Artifacts dir does not exist at the path above.")
 
@@ -402,7 +366,9 @@ def main():
         save_path="models/best_final_model.pt",
         optimizer_name="AdamW",
     )
-    metrics, predictions, targets = trainer.evaluate(test_loader)
+
+    evaluator = ModelEvaluator(model=model, device=trainer.device, save_dir="evaluation_results")
+    metrics, predictions, probabilities, targets = evaluator.evaluate(test_loader, feature_names=feature_names)
 
     # Initialize visualizer
     visualizer = ModelVisualizer(save_dir="plots")
@@ -432,11 +398,12 @@ def main():
         "training_results": training_results,
         "test_metrics": {
             "accuracy": metrics["accuracy"],
-            "f1_score": metrics["f1_score"],
+            "precision": metrics["precision"],
+            "f1_score": metrics["f1"],
             "roc_auc": metrics["roc_auc"],
-            "confusion_matrix": metrics["confusion_matrix"].tolist(),
+            # "confusion_matrix": metrics["confusion_matrix"].tolist(),
             "recall": metrics["recall"],
-            "tnr": metrics["tnr"],
+            "true_positives": metrics["true_positives"],
         },
         "preprocessing_artifacts": state_file,
         "best_params": {

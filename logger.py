@@ -21,10 +21,14 @@ def setup_logger(
     # Create formatters - with or without location info
     if include_location:
         formatter = logging.Formatter(
-            "%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(funcName)s() - %(message)s"
+            "%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(funcName)s() - %(message)s",
+            datefmt="%m-%d-%Y %I:%M%p"
         )
     else:
-        formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+        formatter = logging.Formatter(
+            "%(asctime)s - %(levelname)s - %(message)s",
+            datefmt="%m-%d-%Y %I:%M%p"
+        )
 
     # File handler
     file_handler = logging.FileHandler(log_path, mode="w")
