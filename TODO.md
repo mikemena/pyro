@@ -15,7 +15,18 @@
 3. Understand these components - what are they, when to use it, when not to use it:
 
 ## Batch Normalization
- -- if your dataset is small or highly imbalanced, you might want to monitor the training stability or experiment with smaller/larger batch sizes
+Batch Normalization (BN) is a technique used in AI modeling—especially deep neural networks—to stabilize and speed up training by normalizing the inputs to each layer.
+
+Quick Cheat Sheet
+✅ Use BN:
+Large batch sizes
+CNNs or deep MLPs
+Stable training speed desired
+
+🚫 Avoid BN:
+Batch size < 8–16
+RNNs/sequence models (use Layer Norm instead)
+Highly variable input distributions per batch
 
 ## Learning Rate Scheduling
 -- CosineAnnealingLR
@@ -39,3 +50,5 @@ weight decay of 1e-05 is small, which is fine for subtle regularization, but you
 high dropout rate, which can be effective for preventing overfitting but may lead to underfitting if the model is too small or the data is limited. Since you’re using a single hidden layer with 128 units, this high dropout rate might be aggressive. You could experiment with lower values e.g., 0.3 or 0.5
 
 ## hidden dims
+
+## grid search or random search

@@ -37,6 +37,7 @@ class Predictor(nn.Module):
         layers = []
         prev_dim = input_dim
 
+        # hidden layers
         for i, hidden_dim in enumerate(hidden_dims):
             layers.append(nn.Linear(prev_dim, hidden_dim))
 
@@ -53,6 +54,7 @@ class Predictor(nn.Module):
             layers.append(nn.Dropout(dropout_rate))
             prev_dim = hidden_dim
 
+        # output layer
         layers.append(nn.Linear(prev_dim, 1))
         self.network = nn.Sequential(*layers)
 
