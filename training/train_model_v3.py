@@ -146,27 +146,28 @@ class ModelTrainer:
         val_loader,
         epochs=100,
         lr=0.001,
-        use_scheduler=True,
+        use_scheduler=False,
         scheduler_type="cosine",
         weight_decay=0.0,  # L2 regularization to prevent overfitting
         patience=10,  # stop if validation loss plateaus
         min_delta=1e-4,  # define what counts as 'improvements'
         save_path="best_model.pt",
+        use_optimizer=False,
         optimizer_name="Adam",
     ):
         # Optimizer
-
-        if optimizer_name == "Adam":
-            optimizer = optim.Adam(
-                self.model.parameters(), lr=lr, weight_decay=weight_decay
-            )
-        elif optimizer_name == "AdamW":
-            optimizer = optim.AdamW(
-                self.model.parameters(), lr=lr, weight_decay=weight_decay
-            )
-        else:
-            logger.error(f"Unsupported optimizer: {optimizer_name}")
-            raise ValueError(f"Unsupported optimizer: {optimizer_name}")
+        if use_optimizer:
+            if optimizer_name == "Adam":
+                optimizer = optim.Adam(
+                    self.model.parameters(), lr=lr, weight_decay=weight_decay
+                )
+            elif optimizer_name == "AdamW":
+                optimizer = optim.AdamW(
+                    self.model.parameters(), lr=lr, weight_decay=weight_decay
+                )
+            else:
+                logger.error(f"Unsupported optimizer: {optimizer_name}")
+                raise ValueError(f"Unsupported optimizer: {optimizer_name}")
 
         # Learning rate scheduler
 
@@ -260,8 +261,8 @@ def load_dataset(file_path):
     preprocessor.load_state(state_file)
 
     df = pd.read_excel(file_path)
-    X = df.drop(["personal_loan", "temp_index"], axis=1, errors="ignore").values
-    y = df["personal_loan"].values
+    X = df.drop(["non_responder_in", "temp_index"], axis=1, errors="ignore").values
+    y = df["non_responder_in"].values
 
     # Encode y if binary or categorical target
     if preprocessor.target_type in ["binary", "categorical"]:
@@ -311,15 +312,9 @@ def main():
         logger.error("Artifacts dir does not exist at the path above.")
 
     state_file = os.path.join(preprocessing_artifacts_dir, "preprocessor_state.json")
-    train_file = os.path.join(
-        preprocessing_artifacts_dir, "bank_loans_train_processed.xlsx"
-    )
-    val_file = os.path.join(
-        preprocessing_artifacts_dir, "bank_loans_val_processed.xlsx"
-    )
-    test_file = os.path.join(
-        preprocessing_artifacts_dir, "bank_loans_test_processed.xlsx"
-    )
+    train_file = os.path.join(preprocessing_artifacts_dir, "specs_train_processed.xlsx")
+    val_file = os.path.join(preprocessing_artifacts_dir, "specs_val_processed.xlsx")
+    test_file = os.path.join(preprocessing_artifacts_dir, "specs_test_processed.xlsx")
 
     # Check each file explicitly
     files_to_check = [state_file, train_file, val_file, test_file]
@@ -355,7 +350,7 @@ def main():
 
     input_dim = X_train.shape[1]
 
-    # network starts here...
+    # training starts here...
 
     logger.info("\nFINAL TRAINING WITH BEST PARAMS...")
     model = Predictor(
@@ -376,8 +371,9 @@ def main():
         lr=0.0005,
         weight_decay=1e-05,
         save_path="models/best_final_model.pt",
+        use_optimizer=True,
         optimizer_name="AdamW",
-        use_scheduler=True,
+        use_scheduler=False,
         scheduler_type="cosine",
     )
 
@@ -421,8 +417,10 @@ def main():
             "dropout": 0.3,
             "weight_decay": 1e-05,
             "batch_size": 64,
+            "use_optimizer": True,
             "optimizer": "AdamW",
-            "scheduler_type": "cosine",
+            "use_scheduler": False,
+            "scheduler_type": "",
             "activation": "gelu",
         },
     }
