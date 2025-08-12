@@ -347,6 +347,11 @@ def main():
         "balanced", classes=np.unique(y_train_raw), y=y_train_raw
     )
     logger.info(f"Class weights: {class_weights}")
+    # class_weights = class_weights / class_weights.sum()  # Normalize
+    # logger.info(f"Normalized class weights: {class_weights}")
+
+    class_weights = np.clip(class_weights, 0, 10)
+    logger.info(f"Class weights clipped with np.clip: {class_weights}")
 
     input_dim = X_train.shape[1]
 
