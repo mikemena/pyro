@@ -5,3 +5,5 @@ pandas
 scikit-learn
 openpyxl
 seaborn
+xgboost
+shap
