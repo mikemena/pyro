@@ -111,7 +111,7 @@ class FeatureImportanceAnalyzer:
         return X, y
 
     def train_model(
-        self, X: pd.DataFrame, y: pd.Series, use_existing_split: bool = False
+        self, X: pd.DataFrame, y: pd.Series, use_existing_split: bool = True
     ) -> Dict:
         """
         Train XGBoost model with proper handling of class imbalance.
