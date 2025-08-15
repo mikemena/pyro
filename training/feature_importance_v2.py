@@ -293,12 +293,10 @@ class FeatureImportanceAnalyzer:
 def main():
     analyzer = FeatureImportanceAnalyzer(threshold=0.01, random_state=42)
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    train_data = os.path.join(
-        script_dir, "preprocessing_artifacts", "specs_train_processed.xlsx"
-    )
-    test_data = os.path.join(
-        script_dir, "preprocessing_artifacts", "specs_test_processed.xlsx"
-    )
+    preprocessing_artifacts_dir = os.path.join(script_dir, "../preprocessing_artifacts")
+    train_data = os.path.join(preprocessing_artifacts_dir, "specs_train_processed.xlsx")
+    test_data = os.path.join(preprocessing_artifacts_dir, "specs_test_processed.xlsx")
+
     train_df = pd.read_excel(train_data)
     test_df = pd.read_excel(test_data)
     features = [
@@ -316,7 +314,7 @@ def main():
         "credentialing_required_cd_NPPPCP_OR_EVERY_3_YRS_CE",
         "credentialing_required_cd_No",
         "credentialed_cd_No",
-        "credentialed_cd_Not Required",
+        "credentialed_cd_Not_Required",
         "credentialed_cd_Yes",
         "credentialing_delegated_in_0",
         "credentialing_delegated_in_1",
@@ -332,23 +330,28 @@ def main():
         "temp_index",
     ]
     target = "non_responder_in"
+
     # Prepare data, get filtered features
     X_train, y_train, X_test, y_test, filtered_features = analyzer.prepare_data(
         train_df, test_df, features, target
     )
     # Train model
     train_results = analyzer.train_model(X_train, y_train, use_existing_split=True)
+
     # Analyze feature importance
     feature_importance, shap_values = analyzer.analyze_feature_importance(
         X_test, filtered_features
     )
     # Identify low importance features
     low_importance = analyzer.identify_low_importance_features()
+
     # Create visualizations
     analyzer.create_visualizations(shap_values, X_test, save_plots=True)
+
     # Generate and print report
     report = analyzer.generate_report()
     logger.info(f"{report}")
+
     # Save results
     feature_importance.to_csv("feature_importance_analysis.csv", index=False)
     return analyzer, feature_importance, low_importance

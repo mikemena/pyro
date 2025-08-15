@@ -1,20 +1,23 @@
-1. Model Architecture & Training
+1. Work to do:
 
-[] Add train_model_v3 --> previous models are quite basic - just a simple feedforward network with ReLU and dropout. v3 adds the following:
+[] Reorganize code to branches
 
-- Batch normalization to stabilize training
-- Learning rate scheduling (learning rate stays constant)
-- Limited regularization techniques
+How to Implement:
 
-2. Model Evaluation
+[] Branches for Experiments: Create feature branches for each variation (e.g., git checkout -b model-residual-connections for a model with residuals, or git checkout -b pipeline-smote-oversampling for a data pipeline with SMOTE). Develop and test there, then merge back to main if it performs best.
 
-[] Create evaluate.py with enhanced evaluation
+[] Tags for Milestones: Use Git tags to mark successful versions (e.g., git tag v1.0-best-auc). This way, you can always check out a specific version with git checkout v1.0-best-auc.
 
-[] Move the evaluate method from train_model_v3 to this new evaluate.py
+[] Commits with Metadata: Include experiment details in commit messages (e.g., "Added focal loss; AUC improved to 0.85"). Tools like Git hooks can enforce this.
 
-3. Understand these components - what are they, when to use it, when not to use it:
+[] Avoid File Duplication: Instead of train_model_v1.py and v2.py, have a single train_model.py file. Use conditional logic or configs (see below) to toggle variations.
+
+[] For data versioning (e.g., different pipeline outputs), integrate tools like DVC (Data Version Control), which treats data as code and stores it in Git-compatible formats.
+
+1. Understand these components - what are they, when to use it, when not to use it:
 
 ## Batch Normalization (BN)
+
 Batch Normalization (BN) is a technique used in AI modeling—especially deep neural networks—to stabilize and speed up training by normalizing the inputs to each layer.
 
 When to Use Batch Normalization (BN)
@@ -29,6 +32,7 @@ When to Avoid It
 🚫 Highly variable input distributions per batch
 
 ## Learning Rate Scheduling
+
 Learning Rate Scheduling is a technique in AI modeling where the learning rate—the size of each step the optimizer takes during training—is changed over time instead of staying constant.
 
 Think of the learning rate like the stride of a hiker on a mountain:
@@ -39,7 +43,7 @@ Near the peak (convergence), you want small steps to avoid overshooting.
 
 A learning rate schedule automates that adjustment.
 
--- CosineAnnealingLR : Learning rate follows a cosine curve, starting   high and gradually reaching near zero
+-- CosineAnnealingLR : Learning rate follows a cosine curve, starting high and gradually reaching near zero
 
 -- StepLR : Reduce the learning rate by a factor every fixed number of epochs.
 
@@ -76,6 +80,7 @@ When to Avoid It
 🚫 If the threshold is set too low — gradients will be constantly clipped, leading to underfitting.
 
 ## Regularization (ReLU, LeakyReLU, GELU)
+
 Regularization in AI modeling is any technique that reduces overfitting by controlling model complexity or improving generalization.
 It doesn’t always mean “making the model smaller” — sometimes it means “forcing the model to learn in a more robust way.”
 
@@ -96,7 +101,7 @@ When to Avoid It
 LeakyReLU
 
 - Like ReLU, but negative values are scaled by a small slope (
-𝛼, e.g., 0.01) instead of being zeroed.
+  𝛼, e.g., 0.01) instead of being zeroed.
 - Prevents neurons from dying completely.
 
 When to use LeakyReLU
@@ -108,6 +113,7 @@ When to Avoid It
 🚫 You're working with activations that should be strictly non-negative.
 
 GELU (Gaussian Error Linear Unit)
+
 - Smooth, probabilistic version of ReLU.
 - Retains small negative values in a smooth way
 - Popular in Transformer architectures (e.g., BERT).
@@ -121,6 +127,7 @@ When to Avoid It
 🚫 You don’t see noticeable performance improvement over ReLU.
 
 ## Weight Decay
+
 Weight Decay is a form of regularization in AI modeling that discourages the model’s weights from growing too large.
 It works by adding a penalty term to the loss function so that, during training, the optimizer favors smaller weights.
 
